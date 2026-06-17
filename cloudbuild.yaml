@@ -1,0 +1,2 @@
+- '--set-env-vars'
+- 'FRONTEND_URL1=https://miapp.com,FRONTEND_URL2=https://www.miapp.com,JWT_SECRET=MiClaveSecretaSuperSegura,JWT_EXPIRES_IN=24h,NODE_ENV=production,DB_HOST=tu-host-render.com,DB_PORT=5432,DB_USER=tu-usuario,DB_PASSWORD=tu-contraseña,DB_NAME=tu-basedatos,DIDIT_API_KEY=y9Qfxb-xD_lUfTACji0mvZTJAHSNm-i8LbIo2y6i0WE,DIDIT_WEBHOOK_SECRET=j8m_4cSagvqYrsMtYwizVPu9rtVsY93DQBtkQiuu9Bk,DIDIT_WORKFLOW_ID=1345153c-5feb-4ca0-bf5c-655f62a8bb94,EMAIL_USER=jjbsdesarrollo@gmail.com,EMAIL_PASS=uqgt ezww yoqc jzqh'
