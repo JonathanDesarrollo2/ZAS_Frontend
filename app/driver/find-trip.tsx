@@ -5,8 +5,8 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import * as Location from 'expo-location';   // ← nuevo import
 import { apiClient } from '../../apis/Client';
+import { getSocket } from '../socket/socketClient';   // ajusta la ruta si es diferente
 
 interface Trip {
   id: string;
@@ -29,26 +29,40 @@ const FindTripsScreen = () => {
   const fetchTrips = useCallback(async () => {
     setLoading(true);
     try {
-      // Obtener ubicación real del conductor
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permiso de ubicación', 'Se necesita acceso a la ubicación para buscar viajes.');
-        setLoading(false);
-        return;
-      }
-      const location = await Location.getCurrentPositionAsync({});
-      const lat = location.coords.latitude;
-      const lng = location.coords.longitude;
-      const radius = 5; // kilómetros a la redonda
+      // ---------- COORDENADAS FIJAS PARA PRUEBA (luego cambia por GPS real) ----------
+      const lat = 10.071866;
+      const lng = -66.869583;
+      const radius = 5;
       const endpoint = `/private/trips/available?lat=${lat}&lng=${lng}&radius=${radius}`;
+      
       const response = await apiClient<{ result: boolean; content: Trip[] }>(endpoint);
-      if (response.result) setTrips(response.content);
+      if (response.result) {
+        setTrips(response.content);
+      } else {
+        Alert.alert('Error', 'No se pudieron cargar los viajes');
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'No se pudieron cargar los viajes');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // ---------- Escuchar nuevos viajes por Socket.io ----------
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleNewTrip = () => {
+      fetchTrips();   // recargar la lista automáticamente
+    };
+
+    socket.on('newTripAvailable', handleNewTrip);
+
+    return () => {
+      socket.off('newTripAvailable', handleNewTrip);
+    };
+  }, [fetchTrips]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();

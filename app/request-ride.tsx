@@ -183,6 +183,8 @@ const RequestRideScreen = () => {
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationLoaded, setLocationLoaded] = useState(false);
   const [isSelectingDestination, setIsSelectingDestination] = useState(false);
+  // NUEVO: guardar las coordenadas del destino seleccionado
+  const [destCoords, setDestCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [toastType, setToastType] = useState<'error' | 'success'>('error');
@@ -220,35 +222,32 @@ const RequestRideScreen = () => {
 
   const handleSelectDestination = () => {
     setIsSelectingDestination(true);
-    // Inyectamos JavaScript directamente para cambiar la variable global
     webViewRef.current?.injectJavaScript('enableSelection();');
-    console.log('📱 Activando modo selección en el mapa (inyección JS)');
     showToast('Toca el mapa para seleccionar tu destino', 'success');
   };
 
   const handleCancelSelection = () => {
     setIsSelectingDestination(false);
     webViewRef.current?.injectJavaScript('disableSelection();');
-    console.log('📱 Modo selección cancelado (inyección JS)');
   };
 
   const handleWebViewMessage = async (event: WebViewMessageEvent) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'destinationSelected') {
-        console.log('📱 Destino seleccionado:', data);
         const { lat, lng } = data;
+        // Guardar las coordenadas del destino
+        setDestCoords({ latitude: lat, longitude: lng });
+
+        // Obtener la dirección a partir de las coordenadas
         const response = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`
         );
         const json = await response.json();
         if (json.status === 'OK' && json.results[0]) {
           setDropoff(json.results[0].formatted_address);
-          console.log('📱 Dirección obtenida:', json.results[0].formatted_address);
         } else {
-          const fallback = `Coordenadas: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-          setDropoff(fallback);
-          console.log('📱 Fallback de dirección:', fallback);
+          setDropoff(`Coordenadas: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
         }
         setIsSelectingDestination(false);
       } else if (data.type === 'error') {
@@ -257,7 +256,7 @@ const RequestRideScreen = () => {
         console.log('[WebView] ' + data.message);
       }
     } catch (error) {
-      console.warn('📱 Error al procesar mensaje del WebView', error);
+      console.warn('Error al procesar mensaje del WebView', error);
     }
   };
 
@@ -275,6 +274,10 @@ const RequestRideScreen = () => {
       showToast('No se pudo obtener tu ubicación');
       return;
     }
+    if (!destCoords) {
+      showToast('Selecciona primero un destino en el mapa');
+      return;
+    }
     if (selectedVehicle !== 'moto') {
       showToast('Solo moto está disponible actualmente');
       return;
@@ -282,27 +285,27 @@ const RequestRideScreen = () => {
     setLoading(true);
     try {
       const payload = {
-          pickup_lat: 10.071866,   // ← valor fijo para la prueba
-          pickup_lng: -66.869583,  // ← valor fijo para la prueba
-          pickup_address: pickup.trim(),
-          dropoff_lat: 0,
-          dropoff_lng: 0,
-          dropoff_address: dropoff.trim(),
-          vehicle_type: selectedVehicle,
-          trip_type: 'ride' as const,
-          price: estimatePrice(),
-        };
+        pickup_lat: currentLocation.latitude,        // ✅ ubicación real del GPS
+        pickup_lng: currentLocation.longitude,
+        pickup_address: pickup.trim(),
+        dropoff_lat: destCoords.latitude,            // ✅ coordenadas del punto tocado
+        dropoff_lng: destCoords.longitude,
+        dropoff_address: dropoff.trim(),
+        vehicle_type: selectedVehicle,
+        trip_type: 'ride' as const,
+        price: estimatePrice(),
+      };
       const response = await createTrip(payload as any);
-        if (response.result) {
-          showToast('Viaje solicitado', 'success');
-          const tripId = response.content?.id;
-          setTimeout(() => router.push({
-            pathname: '/trip-waiting',
-            params: { tripId }
-          }), 500);
-        } else {
-          showToast(response.error?.[0] || 'No se pudo solicitar el viaje');
-        }
+      if (response.result) {
+        showToast('Viaje solicitado', 'success');
+        const tripId = response.content?.id;
+        setTimeout(() => router.push({
+          pathname: '/trip-waiting',
+          params: { tripId }
+        }), 500);
+      } else {
+        showToast(response.error?.[0] || 'No se pudo solicitar el viaje');
+      }
     } catch (err: any) {
       showToast(err.message || 'Error al solicitar viaje');
     } finally {

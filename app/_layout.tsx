@@ -45,6 +45,7 @@ export default function RootLayout() {
         {/* ✅ Nuevas pantallas del pasajero */}
         <Stack.Screen name="trip-waiting" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="trip-active" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="chat" options={{ animation: 'slide_from_bottom' }} />
       </Stack>
     </ThemeProvider>
   );
