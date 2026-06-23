@@ -1,0 +1,14 @@
+{
+  "build": {
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://tu-backend-en-cloud-run.a.run.app/api"
+      }
+    },
+    "preview": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://accommodations-involve-city-directed.trycloudflare.com/api"
+      }
+    }
+  }
+}

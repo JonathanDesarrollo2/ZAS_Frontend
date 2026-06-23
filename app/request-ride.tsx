@@ -8,7 +8,7 @@ import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { createTrip } from '../apis/trips';
+import { createTrip, estimatePrice } from '../apis/trips';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -50,7 +50,7 @@ const VEHICLE_OPTIONS = [
     description: 'Rápido y económico',
     icon: 'crosshair',
     available: true,
-    price: 2.50,
+    // precio fijo ya no se usa
   },
   {
     id: 'auto',
@@ -58,7 +58,7 @@ const VEHICLE_OPTIONS = [
     description: 'Próximamente',
     icon: 'truck',
     available: false,
-    price: 0,
+    // precio fijo ya no se usa
   },
 ] as const;
 
@@ -183,8 +183,10 @@ const RequestRideScreen = () => {
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationLoaded, setLocationLoaded] = useState(false);
   const [isSelectingDestination, setIsSelectingDestination] = useState(false);
-  // NUEVO: guardar las coordenadas del destino seleccionado
   const [destCoords, setDestCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
+  const [priceError, setPriceError] = useState<string | null>(null);   // nuevo estado para error de estimación
+
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [toastType, setToastType] = useState<'error' | 'success'>('error');
@@ -236,10 +238,9 @@ const RequestRideScreen = () => {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'destinationSelected') {
         const { lat, lng } = data;
-        // Guardar las coordenadas del destino
         setDestCoords({ latitude: lat, longitude: lng });
 
-        // Obtener la dirección a partir de las coordenadas
+        // Obtener la dirección
         const response = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`
         );
@@ -249,6 +250,23 @@ const RequestRideScreen = () => {
         } else {
           setDropoff(`Coordenadas: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
         }
+
+        // Calcular precio estimado
+        if (currentLocation) {
+          try {
+            const price = await estimatePrice(
+              currentLocation.latitude, currentLocation.longitude,
+              lat, lng
+            );
+            setEstimatedPrice(price);
+            setPriceError(null);
+          } catch (err: any) {
+            console.log('Error al estimar precio', err);
+            setPriceError(err.message || 'Error al estimar precio');
+            setEstimatedPrice(null);
+          }
+        }
+
         setIsSelectingDestination(false);
       } else if (data.type === 'error') {
         showToast(data.message, 'error');
@@ -258,11 +276,6 @@ const RequestRideScreen = () => {
     } catch (error) {
       console.warn('Error al procesar mensaje del WebView', error);
     }
-  };
-
-  const estimatePrice = () => {
-    if (!dropoff.trim()) return 0;
-    return selectedVehicle === 'moto' ? 2.50 : 0;
   };
 
   const handleRequestRide = async () => {
@@ -285,15 +298,15 @@ const RequestRideScreen = () => {
     setLoading(true);
     try {
       const payload = {
-        pickup_lat: currentLocation.latitude,        // ✅ ubicación real del GPS
+        pickup_lat: currentLocation.latitude,
         pickup_lng: currentLocation.longitude,
         pickup_address: pickup.trim(),
-        dropoff_lat: destCoords.latitude,            // ✅ coordenadas del punto tocado
+        dropoff_lat: destCoords.latitude,
         dropoff_lng: destCoords.longitude,
         dropoff_address: dropoff.trim(),
         vehicle_type: selectedVehicle,
         trip_type: 'ride' as const,
-        price: estimatePrice(),
+        price: estimatedPrice ?? undefined,
       };
       const response = await createTrip(payload as any);
       if (response.result) {
@@ -384,7 +397,7 @@ const RequestRideScreen = () => {
                   <Text style={[styles.vehicleLabel, !opt.available && { color: '#B0BEC5' }]}>{opt.label}</Text>
                   <Text style={[styles.vehicleDesc, !opt.available && { color: '#B0BEC5' }]}>{opt.description}</Text>
                 </View>
-                {opt.available && <Text style={[styles.vehiclePrice, selectedVehicle === opt.id && { color: '#FFFFFF' }]}>${opt.price.toFixed(2)}</Text>}
+                {/* Precio fijo eliminado */}
                 {!opt.available && <Text style={styles.vehicleComing}>Próximamente</Text>}
               </TouchableOpacity>
             ))}
@@ -392,7 +405,13 @@ const RequestRideScreen = () => {
 
           <View style={styles.priceEstimate}>
             <Feather name="dollar-sign" size={20} color="#374151" style={{ marginRight: 8 }} />
-            <Text style={styles.priceText}>Precio estimado: ${estimatePrice().toFixed(2)}</Text>
+            {priceError ? (
+              <Text style={styles.priceError}>{priceError}</Text>
+            ) : (
+              <Text style={styles.priceText}>
+                Precio estimado: {estimatedPrice ? `$${estimatedPrice.toFixed(2)}` : 'Calculando...'}
+              </Text>
+            )}
           </View>
 
           <TouchableOpacity
@@ -458,10 +477,10 @@ const styles = StyleSheet.create({
   vehicleCardDisabled: { backgroundColor: '#F5F5F5', borderColor: '#E0E0E0' },
   vehicleLabel: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
   vehicleDesc: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  vehiclePrice: { fontSize: 16, fontWeight: '700', color: '#00C9A7' },
   vehicleComing: { fontSize: 12, fontWeight: '600', color: '#9E9E9E', backgroundColor: '#EEEEEE', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   priceEstimate: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
   priceText: { fontSize: 18, fontWeight: '600', color: '#1F2937' },
+  priceError: { fontSize: 16, color: '#FF5252', fontWeight: '600' },
   button: {
     backgroundColor: '#00C9A7', borderRadius: 16, height: 56, flexDirection: 'row',
     justifyContent: 'center', alignItems: 'center', shadowColor: '#00C9A7',
