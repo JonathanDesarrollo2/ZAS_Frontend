@@ -9,21 +9,31 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const [loaded] = useFonts({ SpaceMono: SpaceMono_400Regular });
+  const [loaded, error] = useFonts({ SpaceMono: SpaceMono_400Regular });
 
   useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
+    // Ocultar splash en cuanto las fuentes estén listas, o después de 5 segundos como máximo
+    if (loaded) {
+      SplashScreen.hideAsync();
+    } else {
+      const timeout = setTimeout(() => {
+        SplashScreen.hideAsync();
+      }, 5000);
+      return () => clearTimeout(timeout);
+    }
   }, [loaded]);
 
-  if (!loaded) return null;
+  // Si hay error al cargar la fuente, igual mostramos la app (sin la fuente personalizada)
+  if (!loaded && !error) return null;
 
   return (
     <ThemeProvider value={colorScheme === 'light' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
+        {/* La pantalla de carga siempre debe ser la primera */}
         <Stack.Screen name="loading/index" options={{ animation: 'none' }} />
         <Stack.Screen name="auth/Login" options={{ animation: 'fade' }} />
         <Stack.Screen name="auth/register" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="auth/verify-email" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="auth/VerifyEmail" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="auth/kyc" options={{ animation: 'fade' }} />
         <Stack.Screen name="dashboard" options={{ animation: 'fade' }} />
         <Stack.Screen name="shared-rides/index" options={{ animation: 'slide_from_right' }} />
@@ -35,16 +45,6 @@ export default function RootLayout() {
         <Stack.Screen name="driver/vehicles" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="driver/availability" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="driver/ride-reservations" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="verification/index" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="bank-account/index" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="payment/index" options={{ animation: 'slide_from_right' }} />
-        {/* ✅ Nuevas pantallas del conductor */}
-        <Stack.Screen name="driver/find-trips" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="driver/trip-detail" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="driver/active-trip" options={{ animation: 'slide_from_right' }} />
-        {/* ✅ Nuevas pantallas del pasajero */}
-        <Stack.Screen name="trip-waiting" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="trip-active" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="chat" options={{ animation: 'slide_from_bottom' }} />
       </Stack>
     </ThemeProvider>

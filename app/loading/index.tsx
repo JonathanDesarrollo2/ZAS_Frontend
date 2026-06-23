@@ -11,6 +11,7 @@ const LoadingScreen = () => {
   }, []);
 
   useEffect(() => {
+    // Cuando el estado de autenticación esté definido, redirigimos
     if (isAuthenticated !== undefined) {
       if (isAuthenticated) {
         router.replace('/dashboard');
@@ -18,6 +19,16 @@ const LoadingScreen = () => {
         router.replace('/auth/Login');
       }
     }
+  }, [isAuthenticated]);
+
+  // Temporizador de seguridad: si después de 8 segundos no se ha resuelto, vamos al login
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (isAuthenticated === undefined) {
+        router.replace('/auth/Login');
+      }
+    }, 8000);
+    return () => clearTimeout(timeout);
   }, [isAuthenticated]);
 
   return (
