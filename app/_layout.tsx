@@ -12,7 +12,6 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({ SpaceMono: SpaceMono_400Regular });
 
   useEffect(() => {
-    // Ocultar splash en cuanto las fuentes estén listas, o después de 5 segundos como máximo
     if (loaded) {
       SplashScreen.hideAsync();
     } else {
@@ -23,14 +22,13 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  // Si hay error al cargar la fuente, igual mostramos la app (sin la fuente personalizada)
   if (!loaded && !error) return null;
 
   return (
     <ThemeProvider value={colorScheme === 'light' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
-        {/* La pantalla de carga siempre debe ser la primera */}
-        <Stack.Screen name="loading/index" options={{ animation: 'none' }} />
+        {/* index es ahora la pantalla de carga principal */}
+        <Stack.Screen name="index" options={{ animation: 'none' }} />
         <Stack.Screen name="auth/Login" options={{ animation: 'fade' }} />
         <Stack.Screen name="auth/register" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="auth/VerifyEmail" options={{ animation: 'slide_from_right' }} />

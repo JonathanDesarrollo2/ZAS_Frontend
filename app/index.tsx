@@ -1,9 +1,10 @@
+// app/index.tsx
 import { View, ActivityIndicator, StyleSheet, Image, Text } from 'react-native';
 import { useEffect } from 'react';
-import { useAuth } from '../../presentation/hooks/useAuth';
+import { useAuth } from '../presentation/hooks/useAuth';
 import { router } from 'expo-router';
 
-const LoadingScreen = () => {
+const IndexScreen = () => {
   const { checkSession, isAuthenticated } = useAuth();
 
   useEffect(() => {
@@ -11,7 +12,6 @@ const LoadingScreen = () => {
   }, []);
 
   useEffect(() => {
-    // Cuando el estado de autenticación esté definido, redirigimos
     if (isAuthenticated !== undefined) {
       if (isAuthenticated) {
         router.replace('/dashboard');
@@ -21,7 +21,7 @@ const LoadingScreen = () => {
     }
   }, [isAuthenticated]);
 
-  // Temporizador de seguridad: si después de 8 segundos no se ha resuelto, vamos al login
+  // Seguridad: si después de 8 segundos no se ha resuelto la sesión, forzar ida al login
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (isAuthenticated === undefined) {
@@ -34,7 +34,7 @@ const LoadingScreen = () => {
   return (
     <View style={styles.container}>
       <Image
-        source={require('../../assets/images/logo.png')}
+        source={require('../assets/images/logo.png')}
         style={styles.logo}
         resizeMode="contain"
       />
@@ -63,4 +63,4 @@ const styles = StyleSheet.create({
   subtitle: { color: '#FFFFFF', fontSize: 16, marginTop: 10, fontWeight: '500' },
 });
 
-export default LoadingScreen;
+export default IndexScreen;
