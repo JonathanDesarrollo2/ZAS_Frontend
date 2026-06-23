@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { jwtDecode } from 'jwt-decode';   // ← importación corregida
+import { jwtDecode } from 'jwt-decode';
 import {
   loginUser,
   registerUser,
@@ -17,10 +17,11 @@ import {
 } from '../../apis/Verification';
 
 interface User {
-  id: string;            // ← nuevo campo
+  id: string;
   sesionUser: string;
   sesionEmail: string;
   nivel: number;
+  balance?: number;
 }
 
 interface AuthState {
@@ -41,6 +42,8 @@ interface AuthState {
   startKYC: () => Promise<string>;
   checkKYCStatus: () => Promise<string>;
 }
+
+const SESSION_EXPIRATION_DAYS = 7; // cerrar sesión tras 7 días de inactividad
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
@@ -68,6 +71,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           sesionUser: userData.sesionUser,
           sesionEmail: userData.sesionEmail,
           nivel: userData.nivel,
+          balance: userData.balance || 0,
         },
         isLoading: false,
       });
@@ -98,6 +102,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             sesionUser: userData.sesionUser,
             sesionEmail: userData.sesionEmail,
             nivel: userData.nivel,
+            balance: userData.balance || 0,
           },
           isLoading: false,
         });
@@ -111,30 +116,49 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    await logoutUser();
+    await AsyncStorage.removeItem('authToken');
     set({ isAuthenticated: false, user: null });
   },
 
   checkSession: async () => {
     set({ isLoading: true });
     try {
-      const userData = await getActiveUser();
       const token = await AsyncStorage.getItem('authToken');
-      const decoded: any = token ? jwtDecode(token) : {};
-      const userId = decoded.id || '';
+      if (!token) {
+        // no hay token guardado
+        set({ isAuthenticated: false, user: null, isLoading: false });
+        return;
+      }
 
+      // Decodificar el token para verificar expiración
+      const decoded: any = jwtDecode(token);
+      const now = Math.floor(Date.now() / 1000); // en segundos
+      const tokenExp = decoded.exp || 0;
+
+      // Si el token expiró hace más de 7 días, cerrar sesión
+      if (tokenExp > 0 && now - tokenExp > SESSION_EXPIRATION_DAYS * 24 * 3600) {
+        await AsyncStorage.removeItem('authToken');
+        set({ isAuthenticated: false, user: null, isLoading: false });
+        return;
+      }
+
+      // Si el token expiró pero dentro del margen de 7 días, seguimos usándolo
+      // (el backend igual validará, si falla se cerrará sesión)
+      const userData = await getActiveUser();
       set({
         isAuthenticated: true,
         user: {
-          id: userId,
+          id: decoded.id || '',
           sesionUser: userData.sesionUser,
           sesionEmail: userData.sesionEmail,
           nivel: userData.nivel,
+          balance: userData.balance || 0,
         },
         isLoading: false,
       });
     } catch (error: any) {
-      await logoutUser();
+      // Si falla la petición (token inválido o error de red)
+      await AsyncStorage.removeItem('authToken');
       set({ isAuthenticated: false, user: null, isLoading: false });
     }
   },

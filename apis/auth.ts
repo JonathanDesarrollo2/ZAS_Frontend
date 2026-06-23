@@ -60,6 +60,7 @@ export const getActiveUser = async (): Promise<{
   sesionEmail: string;
   userStatus: boolean;
   nivel: number;
+  balance?: number;   // ← nuevo campo opcional
 }> => {
   const data = await apiClient<{ result: boolean; content: any }>('/private/user/onsession');
   return data.content;
