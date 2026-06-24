@@ -1,11 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Image, Dimensions,
-  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../presentation/hooks/useAuth';
+import ToastNotification from '../presentation/components/shared/toastNotification';
+import LoadingOverlay from '../presentation/components/shared/LoadingOverlay';
 
 type FeatherIconName =
   | 'navigation' | 'package' | 'map-pin' | 'plus-circle' | 'list' | 'truck'
@@ -22,10 +23,22 @@ const LogoIcon = () => (
   </View>
 );
 
-const ServiceCard = ({ icon, title, desc, onPress, disabled }: { icon: FeatherIconName; title: string; desc: string; onPress: () => void; disabled?: boolean }) => (
+const ServiceCard = ({
+  icon,
+  title,
+  desc,
+  onPress,
+  disabled,
+}: {
+  icon: FeatherIconName;
+  title: string;
+  desc: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) => (
   <TouchableOpacity
     style={[styles.serviceCard, disabled && { opacity: 0.5 }]}
-    onPress={disabled ? () => Alert.alert('KYC requerido', 'Debes verificar tu identidad primero.') : onPress}
+    onPress={disabled ? onPress : onPress} // en disabled ya se muestra el toast, pero mantenemos la opacidad
     activeOpacity={0.8}
   >
     <Feather name={icon} size={24} color="#00C9A7" style={{ marginRight: 16 }} />
@@ -76,38 +89,73 @@ const DashboardScreen = () => {
     ]).start(() => setMenuOpen(false));
   };
 
+  // ---------- Toast & Spinner ----------
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+  const [toastType, setToastType] = useState<'error' | 'success'>('error');
+  const [spinnerVisible, setSpinnerVisible] = useState(false);
+
+  const showToast = useCallback((msg: string, type: 'error' | 'success' = 'error') => {
+    setToastMsg(msg);
+    setToastType(type);
+    setToastVisible(true);
+  }, []);
+
   const handleLogout = async () => {
     closeMenu();
-    await logout();
-    router.replace('/auth/Login');
+    setSpinnerVisible(true);
+    try {
+      await logout();
+    } catch (error) {
+      showToast('Error al cerrar sesión');
+    } finally {
+      setSpinnerVisible(false);
+      router.replace('/auth/Login');
+    }
+  };
+
+  // Handler para tarjetas deshabilitadas por KYC
+  const handleKYCRequired = () => {
+    showToast('KYC requerido: Debes verificar tu identidad primero.');
   };
 
   const driverModules = (
     <>
-      <ServiceCard icon="search" title="Encontrar viajes" desc="Ve los viajes que te están esperando" onPress={() => router.push('/driver/find-trip')} disabled={!isKYC} />
+      <ServiceCard icon="search" title="Encontrar viajes" desc="Ve los viajes que te están esperando" onPress={isKYC ? () => router.push('/driver/find-trip') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="plus-circle" title="Publicar viaje" desc="Crea un viaje con cupos disponibles" onPress={() => router.push('/driver/create-ride')} disabled={!isKYC} />
+      <ServiceCard icon="plus-circle" title="Publicar viaje" desc="Crea un viaje con cupos disponibles" onPress={isKYC ? () => router.push('/driver/create-ride') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="list" title="Mis viajes" desc="Gestiona los viajes que has creado" onPress={() => router.push('/driver/my-rides')} disabled={!isKYC} />
+      <ServiceCard icon="list" title="Mis viajes" desc="Gestiona los viajes que has creado" onPress={isKYC ? () => router.push('/driver/my-rides') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="truck" title="Mis vehículos" desc="Añade, edita y selecciona tu vehículo activo" onPress={() => router.push('/driver/vehicles')} disabled={!isKYC} />
+      <ServiceCard icon="truck" title="Mis vehículos" desc="Añade, edita y selecciona tu vehículo activo" onPress={isKYC ? () => router.push('/driver/vehicles') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="toggle-right" title="Disponibilidad" desc="Activa o desactiva tu disponibilidad" onPress={() => router.push('/driver/availability')} disabled={!isKYC} />
+      <ServiceCard icon="toggle-right" title="Disponibilidad" desc="Activa o desactiva tu disponibilidad" onPress={isKYC ? () => router.push('/driver/availability') : handleKYCRequired} disabled={!isKYC} />
     </>
   );
 
   const passengerModules = (
     <>
-      <ServiceCard icon="navigation" title="Taxis" desc="Viajes compartidos disponibles" onPress={() => router.push('/shared-rides')} disabled={!isKYC} />
+      <ServiceCard icon="navigation" title="Taxis" desc="Viajes compartidos disponibles" onPress={isKYC ? () => router.push('/shared-rides') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="package" title="Delivery" desc="Pide comida a negocios locales" onPress={() => Alert.alert('Próximamente: Delivery')} disabled={!isKYC} />
+      <ServiceCard icon="package" title="Delivery" desc="Pide comida a negocios locales" onPress={isKYC ? () => handleKYCRequired : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="map-pin" title="Pedir Taxi" desc="Solicita un viaje ahora" onPress={() => router.push('/request-ride')} disabled={!isKYC} />
+      <ServiceCard icon="map-pin" title="Pedir Taxi" desc="Solicita un viaje ahora" onPress={isKYC ? () => router.push('/request-ride') : handleKYCRequired} disabled={!isKYC} />
     </>
   );
 
   return (
     <View style={styles.screen}>
+      {/* Toast */}
+      <ToastNotification
+        visible={toastVisible}
+        message={toastMsg}
+        type={toastType}
+        onHide={() => setToastVisible(false)}
+      />
+
+      {/* Spinner */}
+      <LoadingOverlay visible={spinnerVisible} message="Cerrando sesión..." />
+
       {menuOpen && (
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={closeMenu}>
           <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]} />
@@ -115,6 +163,7 @@ const DashboardScreen = () => {
       )}
 
       <Animated.View style={[styles.menuPanel, { transform: [{ translateX: menuSlide }] }]}>
+        {/* ... menú lateral (sin cambios) ... */}
         <View style={styles.menuHeader}>
           <View style={styles.menuAvatar}>
             <Feather name="user" size={28} color="#00C9A7" />
@@ -130,7 +179,7 @@ const DashboardScreen = () => {
 
         <ScrollView style={styles.menuScroll} contentContainerStyle={{ paddingBottom: 30 }}>
           <MenuItem icon="shield" label="Verificación" onPress={() => { closeMenu(); router.push('/verification'); }} />
-          <MenuItem icon="file-text" label="Historial" onPress={() => { closeMenu(); alert('Historial (próximamente)'); }} />
+          <MenuItem icon="file-text" label="Historial" onPress={() => { closeMenu(); showToast('Historial próximamente', 'error'); }} />
           <MenuItem icon="credit-card" label="Cuenta Bancaria" onPress={() => { closeMenu(); router.push('/bank-account'); }} />
           <View style={styles.menuDivider} />
           <MenuItem icon="log-out" label="Cerrar sesión" onPress={handleLogout} />
@@ -144,7 +193,7 @@ const DashboardScreen = () => {
           </TouchableOpacity>
           <LogoIcon />
           <View style={{ flex: 1, alignItems: 'flex-end' }}>
-            <TouchableOpacity onPress={() => alert('Notificaciones (próximamente)')}>
+            <TouchableOpacity onPress={() => router.push('/notifications')}>
               <Feather name="bell" size={24} color="#1F2937" />
             </TouchableOpacity>
           </View>
@@ -200,6 +249,7 @@ const DashboardScreen = () => {
   );
 };
 
+// Los estilos se mantienen exactamente igual que en la versión anterior.
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   mainContainer: { flex: 1, paddingHorizontal: 20, paddingTop: 60 },
