@@ -7,7 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../presentation/hooks/useAuth';
 
 const KYCScreen = () => {
-  const { startKYC, checkKYCStatus, isLoading } = useAuth();
+  const { startKYC, checkKYCStatus, isLoading, checkSession } = useAuth();
   const [status, setStatus] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -22,6 +22,8 @@ const KYCScreen = () => {
       const result = await checkKYCStatus();
       setStatus(result);
       if (result === 'verified') {
+        // Actualizar la sesión para que el dashboard reciba isKYCVerified = true
+        await checkSession();
         Alert.alert('Verificación exitosa', 'Tu identidad ha sido verificada. Ya puedes usar todas las funciones.', [
           { text: 'Ir al dashboard', onPress: () => router.replace('/dashboard') }
         ]);
@@ -145,23 +147,13 @@ const KYCScreen = () => {
               </TouchableOpacity>
             )}
 
-            {!status || status === 'not_started' ? (
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => router.back()}
-              >
-                <Feather name="arrow-left" size={18} color="#00C9A7" style={{ marginRight: 8 }} />
-                <Text style={styles.secondaryButtonText}>Volver al dashboard</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => router.back()}
-              >
-                <Feather name="x-circle" size={18} color="#00C9A7" style={{ marginRight: 8 }} />
-                <Text style={styles.secondaryButtonText}>Cancelar y salir</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.back()}
+            >
+              <Feather name="arrow-left" size={18} color="#00C9A7" style={{ marginRight: 8 }} />
+              <Text style={styles.secondaryButtonText}>Volver al dashboard</Text>
+            </TouchableOpacity>
           </>
         )}
 

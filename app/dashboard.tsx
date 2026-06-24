@@ -188,16 +188,20 @@ const DashboardScreen = () => {
 
       <Animated.View style={[styles.mainContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={openMenu} style={{ marginRight: 12 }}>
-            <Feather name="menu" size={24} color="#1F2937" />
+  <TouchableOpacity onPress={openMenu} style={{ marginRight: 12 }}>
+    <Feather name="menu" size={24} color="#1F2937" />
+  </TouchableOpacity>
+  <LogoIcon />
+        <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
+          {/* Saldo pequeño */}
+          <Text style={styles.balanceMini}>
+            ${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}
+          </Text>
+          <TouchableOpacity onPress={() => router.push('/notifications')}>
+            <Feather name="bell" size={24} color="#1F2937" />
           </TouchableOpacity>
-          <LogoIcon />
-          <View style={{ flex: 1, alignItems: 'flex-end' }}>
-            <TouchableOpacity onPress={() => router.push('/notifications')}>
-              <Feather name="bell" size={24} color="#1F2937" />
-            </TouchableOpacity>
-          </View>
         </View>
+      </View>
 
         <Text style={styles.greeting}>Hola, {user?.sesionUser || 'Usuario'}</Text>
 
@@ -309,6 +313,16 @@ const styles = StyleSheet.create({
   menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
   menuItemText: { fontSize: 16, fontWeight: '500', color: '#1F2937' },
   menuDivider: { height: 1, backgroundColor: '#E5F5F0', marginVertical: 8 },
+  balanceMini: {
+  fontSize: 16,
+  fontWeight: '700',
+  color: '#00C9A7',
+  backgroundColor: '#E6FFFA',
+  paddingHorizontal: 10,
+  paddingVertical: 4,
+  borderRadius: 10,
+  overflow: 'hidden',
+},
 });
 
 export default DashboardScreen;
