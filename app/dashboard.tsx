@@ -1,3 +1,4 @@
+// app/dashboard.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Image, Dimensions,
@@ -10,7 +11,7 @@ import { apiClient } from '../apis/Client';
 type FeatherIconName =
   | 'navigation' | 'package' | 'map-pin' | 'plus-circle' | 'list' | 'truck'
   | 'toggle-right' | 'chevron-right' | 'bell' | 'clock' | 'log-out' | 'menu'
-  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'search';
+  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'search' | 'dollar-sign';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.75;
@@ -93,7 +94,7 @@ const DashboardScreen = () => {
   };
 
   const driverModules = (
-  <>
+    <>
       <ServiceCard icon="search" title="Encontrar viajes" desc="Ve los viajes que te están esperando" onPress={() => router.push('/driver/find-trip')} />
       <View style={styles.separator} />
       <ServiceCard icon="plus-circle" title="Publicar viaje" desc="Crea un viaje con cupos disponibles" onPress={navigateToPublish} />
@@ -159,7 +160,25 @@ const DashboardScreen = () => {
             </TouchableOpacity>
           </View>
         </View>
+
         <Text style={styles.greeting}>Hola, {user?.sesionUser || 'Usuario'}</Text>
+
+        {/* Saldo del usuario */}
+        <TouchableOpacity
+          style={styles.balanceCard}
+          onPress={() => router.push('/add-balance')}
+          activeOpacity={0.8}
+        >
+          <Feather name="dollar-sign" size={20} color="#00C9A7" style={{ marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.balanceLabel}>Saldo disponible</Text>
+            <Text style={styles.balanceAmount}>
+              ${user?.balance !== undefined ? user.balance.toFixed(2) : '0.00'}
+            </Text>
+          </View>
+          <Feather name="plus-circle" size={22} color="#00C9A7" />
+        </TouchableOpacity>
+
         <View style={styles.servicesContainer}>{isDriver ? driverModules : passengerModules}</View>
         <Text style={styles.sectionTitle}>Actividad reciente</Text>
         <View style={styles.emptyActivity}>
@@ -188,6 +207,23 @@ const styles = StyleSheet.create({
   logoImage: { width: 32, height: 32 },
   pinDot: { position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: '#00C9A7' },
   greeting: { fontSize: 28, fontWeight: '700', color: '#1F2937', marginBottom: 24 },
+  balanceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#E5F5F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  balanceLabel: { color: '#6B7280', fontSize: 14 },
+  balanceAmount: { color: '#1F2937', fontSize: 22, fontWeight: '700', marginTop: 4 },
   servicesContainer: { backgroundColor: '#FFFFFF', borderRadius: 20, marginBottom: 28, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3, borderWidth: 1, borderColor: '#E5F5F0', overflow: 'hidden' },
   serviceCard: { flexDirection: 'row', alignItems: 'center', padding: 18 },
   separator: { height: 1, backgroundColor: '#E5F5F0', marginHorizontal: 18 },

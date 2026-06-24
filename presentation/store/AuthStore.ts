@@ -125,14 +125,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const token = await AsyncStorage.getItem('authToken');
       if (!token) {
-        // no hay token guardado
         set({ isAuthenticated: false, user: null, isLoading: false });
         return;
       }
 
-      // Decodificar el token para verificar expiración
       const decoded: any = jwtDecode(token);
-      const now = Math.floor(Date.now() / 1000); // en segundos
+      const now = Math.floor(Date.now() / 1000);
       const tokenExp = decoded.exp || 0;
 
       // Si el token expiró hace más de 7 días, cerrar sesión
@@ -142,8 +140,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      // Si el token expiró pero dentro del margen de 7 días, seguimos usándolo
-      // (el backend igual validará, si falla se cerrará sesión)
       const userData = await getActiveUser();
       set({
         isAuthenticated: true,
@@ -157,7 +153,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
     } catch (error: any) {
-      // Si falla la petición (token inválido o error de red)
       await AsyncStorage.removeItem('authToken');
       set({ isAuthenticated: false, user: null, isLoading: false });
     }

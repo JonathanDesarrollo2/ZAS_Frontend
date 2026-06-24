@@ -44,6 +44,7 @@ export default function RootLayout() {
         <Stack.Screen name="driver/availability" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="driver/ride-reservations" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="chat" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="add-balance" options={{ animation: 'slide_from_right' }} />
       </Stack>
     </ThemeProvider>
   );
