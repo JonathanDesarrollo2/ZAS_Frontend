@@ -173,7 +173,7 @@ const DashboardScreen = () => {
           <View style={{ flex: 1 }}>
             <Text style={styles.balanceLabel}>Saldo disponible</Text>
             <Text style={styles.balanceAmount}>
-              ${user?.balance !== undefined ? user.balance.toFixed(2) : '0.00'}
+              ${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}
             </Text>
           </View>
           <Feather name="plus-circle" size={22} color="#00C9A7" />

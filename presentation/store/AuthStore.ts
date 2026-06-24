@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode';
-import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
 import {
   loginUser,
   registerUser,
@@ -81,13 +79,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         },
         isLoading: false,
       });
-
-      if (Platform.OS !== 'web') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        if (status !== 'granted') {
-          console.log('Permiso de notificación no concedido');
-        }
-      }
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
       throw error;

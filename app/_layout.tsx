@@ -1,11 +1,10 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts, SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
-import { Stack } from 'expo-router';
+import { Stack, router, useRootNavigationState, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useColorScheme } from '../presentation/hooks/use-color-scheme';
 import { useAuth } from '../presentation/hooks/useAuth';
-import { router, useRootNavigationState } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -14,6 +13,8 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({ SpaceMono: SpaceMono_400Regular });
   const { isAuthenticated, user, isLoading } = useAuth();
   const navigationState = useRootNavigationState();
+  const segments = useSegments();
+  const previousAuthState = useRef<{ isAuthenticated: boolean; isEmailVerified: boolean } | null>(null);
 
   useEffect(() => {
     if (loaded) {
@@ -26,23 +27,47 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  // Redirigir según estado de autenticación y verificación de email
+  // Redirigir según estado de autenticación y verificación de email, solo cuando cambie el estado
   useEffect(() => {
-    if (!navigationState?.key) return; // esperar a que el navegador esté listo
-    if (isLoading) return;
+    if (!navigationState?.key || isLoading) return;
+
+    const currentAuth = {
+      isAuthenticated,
+      isEmailVerified: user?.isEmailVerified || false,
+    };
+
+    // Si el estado no ha cambiado, no hacer nada
+    if (
+      previousAuthState.current &&
+      previousAuthState.current.isAuthenticated === currentAuth.isAuthenticated &&
+      previousAuthState.current.isEmailVerified === currentAuth.isEmailVerified
+    ) {
+      return;
+    }
+
+    previousAuthState.current = currentAuth;
 
     if (isAuthenticated) {
       if (!user?.isEmailVerified) {
-        router.replace('/auth/VerifyEmail');
+        // Solo redirigir si no estamos ya en la pantalla de verificación
+        if (segments[0] !== 'auth' || segments[1] !== 'VerifyEmail') {
+          router.replace('/auth/VerifyEmail');
+        }
       } else if (!user?.isKYCVerified) {
-        router.replace('/dashboard'); // puede ver menú limitado
+        if (segments[0] !== 'dashboard') {
+          router.replace('/dashboard');
+        }
       } else {
-        router.replace('/dashboard');
+        if (segments[0] !== 'dashboard') {
+          router.replace('/dashboard');
+        }
       }
     } else {
-      router.replace('/auth/Login');
+      if (segments[0] !== 'auth' || segments[1] !== 'Login') {
+        router.replace('/auth/Login');
+      }
     }
-  }, [isAuthenticated, isLoading, user?.isEmailVerified]);
+  }, [isAuthenticated, isLoading, user?.isEmailVerified, user?.isKYCVerified, segments]);
 
   if (!loaded && !error) return null;
 
@@ -63,7 +88,7 @@ export default function RootLayout() {
         <Stack.Screen name="driver/my-rides" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="driver/vehicles" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="driver/availability" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="driver/ride-reservations" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="driver/ride-reservation" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="chat" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="add-balance" options={{ animation: 'slide_from_right' }} />
       </Stack>

@@ -85,8 +85,9 @@ const RegisterScreen = () => {
         userrepass: repass,
         nivel,
       });
-      showToast('Registro exitoso, inicia sesión', 'success');
-      setTimeout(() => router.replace('/auth/Login'), 1000);
+      showToast('Registro exitoso, verifica tu correo', 'success');
+      // Redirigir directamente a la pantalla de verificación de correo
+      setTimeout(() => router.replace('/auth/VerifyEmail'), 500);
     } catch (err: any) {
       let msg = err?.message || 'Error al registrarse';
       if (msg === 'Invalid value') msg = 'Datos inválidos, revisa la información';
@@ -99,7 +100,6 @@ const RegisterScreen = () => {
       <Toast message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], alignItems: 'center', marginBottom: 30 }}>
-          {/* Logo sin fondo */}
           <Image
             source={require('../../assets/images/logo.png')}
             style={styles.logo}
@@ -142,11 +142,7 @@ const RegisterScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0fdf9' },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 30, paddingVertical: 40 },
-  logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 20,
-  },
+  logo: { width: 120, height: 120, marginBottom: 20 },
   title: { fontSize: 32, fontWeight: '800', color: '#1f2937', marginBottom: 4 },
   sub: { fontSize: 14, color: '#6b7280' },
   inputRow: {
