@@ -52,6 +52,8 @@ export const getActiveUser = async (): Promise<{
   userStatus: boolean;
   nivel: number;
   balance?: number;
+  isEmailVerified?: boolean;   // nuevo
+  isKYCVerified?: boolean;     // nuevo
 }> => {
   const data = await apiClient<{ result: boolean; content: any }>('/private/user/onsession');
   return data.content;

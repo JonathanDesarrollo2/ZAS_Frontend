@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode';
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import {
   loginUser,
   registerUser,
@@ -22,6 +24,8 @@ interface User {
   sesionEmail: string;
   nivel: number;
   balance?: number;
+  isEmailVerified: boolean;
+  isKYCVerified: boolean;
 }
 
 interface AuthState {
@@ -43,7 +47,7 @@ interface AuthState {
   checkKYCStatus: () => Promise<string>;
 }
 
-const SESSION_EXPIRATION_DAYS = 7; // cerrar sesión tras 7 días de inactividad
+const SESSION_EXPIRATION_DAYS = 7;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
@@ -72,9 +76,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           sesionEmail: userData.sesionEmail,
           nivel: userData.nivel,
           balance: userData.balance || 0,
+          isEmailVerified: userData.isEmailVerified || false,
+          isKYCVerified: userData.isKYCVerified || false,
         },
         isLoading: false,
       });
+
+      if (Platform.OS !== 'web') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('Permiso de notificación no concedido');
+        }
+      }
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
       throw error;
@@ -103,6 +116,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             sesionEmail: userData.sesionEmail,
             nivel: userData.nivel,
             balance: userData.balance || 0,
+            isEmailVerified: userData.isEmailVerified || false,
+            isKYCVerified: userData.isKYCVerified || false,
           },
           isLoading: false,
         });
@@ -133,7 +148,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const now = Math.floor(Date.now() / 1000);
       const tokenExp = decoded.exp || 0;
 
-      // Si el token expiró hace más de 7 días, cerrar sesión
       if (tokenExp > 0 && now - tokenExp > SESSION_EXPIRATION_DAYS * 24 * 3600) {
         await AsyncStorage.removeItem('authToken');
         set({ isAuthenticated: false, user: null, isLoading: false });
@@ -149,6 +163,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           sesionEmail: userData.sesionEmail,
           nivel: userData.nivel,
           balance: userData.balance || 0,
+          isEmailVerified: userData.isEmailVerified || false,
+          isKYCVerified: userData.isKYCVerified || false,
         },
         isLoading: false,
       });

@@ -1,12 +1,11 @@
-// app/dashboard.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Image, Dimensions,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../presentation/hooks/useAuth';
-import { apiClient } from '../apis/Client';
 
 type FeatherIconName =
   | 'navigation' | 'package' | 'map-pin' | 'plus-circle' | 'list' | 'truck'
@@ -23,8 +22,12 @@ const LogoIcon = () => (
   </View>
 );
 
-const ServiceCard = ({ icon, title, desc, onPress }: { icon: FeatherIconName; title: string; desc: string; onPress: () => void }) => (
-  <TouchableOpacity style={styles.serviceCard} onPress={onPress} activeOpacity={0.8}>
+const ServiceCard = ({ icon, title, desc, onPress, disabled }: { icon: FeatherIconName; title: string; desc: string; onPress: () => void; disabled?: boolean }) => (
+  <TouchableOpacity
+    style={[styles.serviceCard, disabled && { opacity: 0.5 }]}
+    onPress={disabled ? () => Alert.alert('KYC requerido', 'Debes verificar tu identidad primero.') : onPress}
+    activeOpacity={0.8}
+  >
     <Feather name={icon} size={24} color="#00C9A7" style={{ marginRight: 16 }} />
     <View style={{ flex: 1 }}>
       <Text style={styles.serviceTitle}>{title}</Text>
@@ -44,6 +47,7 @@ const MenuItem = ({ icon, label, onPress }: { icon: FeatherIconName; label: stri
 const DashboardScreen = () => {
   const { user, logout } = useAuth();
   const isDriver = user?.nivel === 2;
+  const isKYC = user?.isKYCVerified;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -78,42 +82,27 @@ const DashboardScreen = () => {
     router.replace('/auth/Login');
   };
 
-  // Verificar cuenta bancaria antes de publicar
-  const navigateToPublish = async () => {
-    try {
-      const res = await apiClient<{ result: boolean; content: any }>('/private/bank-account');
-      if (res.result && res.content) {
-        router.push('/driver/create-ride');
-      } else {
-        alert('Debes agregar tu cuenta bancaria antes de publicar viajes.');
-        router.push('/bank-account');
-      }
-    } catch (error) {
-      router.push('/driver/create-ride');
-    }
-  };
-
   const driverModules = (
     <>
-      <ServiceCard icon="search" title="Encontrar viajes" desc="Ve los viajes que te están esperando" onPress={() => router.push('/driver/find-trip')} />
+      <ServiceCard icon="search" title="Encontrar viajes" desc="Ve los viajes que te están esperando" onPress={() => router.push('/driver/find-trip')} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="plus-circle" title="Publicar viaje" desc="Crea un viaje con cupos disponibles" onPress={navigateToPublish} />
+      <ServiceCard icon="plus-circle" title="Publicar viaje" desc="Crea un viaje con cupos disponibles" onPress={() => router.push('/driver/create-ride')} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="list" title="Mis viajes" desc="Gestiona los viajes que has creado" onPress={() => router.push('/driver/my-rides')} />
+      <ServiceCard icon="list" title="Mis viajes" desc="Gestiona los viajes que has creado" onPress={() => router.push('/driver/my-rides')} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="truck" title="Mis vehículos" desc="Añade, edita y selecciona tu vehículo activo" onPress={() => router.push('/driver/vehicles')} />
+      <ServiceCard icon="truck" title="Mis vehículos" desc="Añade, edita y selecciona tu vehículo activo" onPress={() => router.push('/driver/vehicles')} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="toggle-right" title="Disponibilidad" desc="Activa o desactiva tu disponibilidad" onPress={() => router.push('/driver/availability')} />
+      <ServiceCard icon="toggle-right" title="Disponibilidad" desc="Activa o desactiva tu disponibilidad" onPress={() => router.push('/driver/availability')} disabled={!isKYC} />
     </>
   );
 
   const passengerModules = (
     <>
-      <ServiceCard icon="navigation" title="Taxis" desc="Viajes compartidos disponibles" onPress={() => router.push('/shared-rides')} />
+      <ServiceCard icon="navigation" title="Taxis" desc="Viajes compartidos disponibles" onPress={() => router.push('/shared-rides')} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="package" title="Delivery" desc="Pide comida a negocios locales" onPress={() => alert('Próximamente: Delivery')} />
+      <ServiceCard icon="package" title="Delivery" desc="Pide comida a negocios locales" onPress={() => Alert.alert('Próximamente: Delivery')} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard icon="map-pin" title="Pedir Taxi" desc="Solicita un viaje ahora" onPress={() => router.push('/request-ride')} />
+      <ServiceCard icon="map-pin" title="Pedir Taxi" desc="Solicita un viaje ahora" onPress={() => router.push('/request-ride')} disabled={!isKYC} />
     </>
   );
 
@@ -163,7 +152,18 @@ const DashboardScreen = () => {
 
         <Text style={styles.greeting}>Hola, {user?.sesionUser || 'Usuario'}</Text>
 
-        {/* Saldo del usuario */}
+        {/* Banner KYC */}
+        {!isKYC && (
+          <View style={styles.kycWarning}>
+            <Feather name="alert-triangle" size={20} color="#FF9800" />
+            <Text style={styles.kycText}>Verifica tu identidad para usar todas las funciones.</Text>
+            <TouchableOpacity onPress={() => router.push('/auth/kyc')}>
+              <Text style={{ color: '#3c87f7', fontWeight: '600' }}>Verificar ahora</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Saldo */}
         <TouchableOpacity
           style={styles.balanceCard}
           onPress={() => router.push('/add-balance')}
@@ -180,6 +180,7 @@ const DashboardScreen = () => {
         </TouchableOpacity>
 
         <View style={styles.servicesContainer}>{isDriver ? driverModules : passengerModules}</View>
+
         <Text style={styles.sectionTitle}>Actividad reciente</Text>
         <View style={styles.emptyActivity}>
           <Feather name="clock" size={40} color="#ccc" />
@@ -207,6 +208,16 @@ const styles = StyleSheet.create({
   logoImage: { width: 32, height: 32 },
   pinDot: { position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: '#00C9A7' },
   greeting: { fontSize: 28, fontWeight: '700', color: '#1F2937', marginBottom: 24 },
+  kycWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+    gap: 10,
+  },
+  kycText: { color: '#E65100', flex: 1, fontSize: 14 },
   balanceCard: {
     flexDirection: 'row',
     alignItems: 'center',

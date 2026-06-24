@@ -4,12 +4,16 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { useColorScheme } from '../presentation/hooks/use-color-scheme';
+import { useAuth } from '../presentation/hooks/useAuth';
+import { router, useRootNavigationState } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded, error] = useFonts({ SpaceMono: SpaceMono_400Regular });
+  const { isAuthenticated, user, isLoading } = useAuth();
+  const navigationState = useRootNavigationState();
 
   useEffect(() => {
     if (loaded) {
@@ -22,12 +26,29 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
+  // Redirigir según estado de autenticación y verificación de email
+  useEffect(() => {
+    if (!navigationState?.key) return; // esperar a que el navegador esté listo
+    if (isLoading) return;
+
+    if (isAuthenticated) {
+      if (!user?.isEmailVerified) {
+        router.replace('/auth/VerifyEmail');
+      } else if (!user?.isKYCVerified) {
+        router.replace('/dashboard'); // puede ver menú limitado
+      } else {
+        router.replace('/dashboard');
+      }
+    } else {
+      router.replace('/auth/Login');
+    }
+  }, [isAuthenticated, isLoading, user?.isEmailVerified]);
+
   if (!loaded && !error) return null;
 
   return (
     <ThemeProvider value={colorScheme === 'light' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
-        {/* index es ahora la pantalla de carga principal */}
         <Stack.Screen name="index" options={{ animation: 'none' }} />
         <Stack.Screen name="auth/Login" options={{ animation: 'fade' }} />
         <Stack.Screen name="auth/register" options={{ animation: 'slide_from_right' }} />

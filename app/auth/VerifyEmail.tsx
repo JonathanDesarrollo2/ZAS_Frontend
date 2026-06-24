@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 
 const VerifyEmailScreen = () => {
   const [code, setCode] = useState('');
-  const { sendEmailCode, confirmEmailCode, isLoading, error } = useAuth();
+  const { sendEmailCode, confirmEmailCode, isLoading, error, checkSession } = useAuth();
 
   const handleVerify = async () => {
     if (code.length !== 8) {
@@ -14,8 +14,9 @@ const VerifyEmailScreen = () => {
     }
     try {
       await confirmEmailCode(code);
+      await checkSession(); // refrescar sesión para actualizar isEmailVerified
       Alert.alert('¡Verificado!', 'Tu correo ha sido confirmado', [
-        { text: 'OK', onPress: () => router.replace('/map') }
+        { text: 'OK', onPress: () => router.replace('/dashboard') }
       ]);
     } catch (err: any) {
       Alert.alert('Error', err.message);
