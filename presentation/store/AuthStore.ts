@@ -15,6 +15,8 @@ import {
   startVerification,
   getVerificationStatus,
 } from '../../apis/Verification';
+import { getFCMToken } from '../../services/notifications';
+import { getToken } from '../../apis/Client';
 
 interface User {
   id: string;
@@ -24,6 +26,8 @@ interface User {
   balance?: number;
   isEmailVerified: boolean;
   isKYCVerified: boolean;
+  profile_pic_url?: string | null;
+  profile_pic_updated_at?: Date | string | null;   // ← cambiado a Date | string | null
 }
 
 interface AuthState {
@@ -32,6 +36,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
 
+  initialize: () => Promise<void>;
   login: (payload: LoginPayload) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
@@ -40,18 +45,61 @@ interface AuthState {
 
   sendEmailCode: () => Promise<void>;
   confirmEmailCode: (code: string) => Promise<void>;
-
   startKYC: () => Promise<string>;
   checkKYCStatus: () => Promise<string>;
+
+  updatePushToken: () => Promise<void>;
 }
 
 const SESSION_EXPIRATION_DAYS = 7;
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuth = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   user: null,
-  isLoading: false,
+  isLoading: true,
   error: null,
+
+  initialize: async () => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        set({ isLoading: false, isAuthenticated: false, user: null });
+        return;
+      }
+
+      const decoded: any = jwtDecode(token);
+      const now = Math.floor(Date.now() / 1000);
+      const tokenExp = decoded.exp || 0;
+
+      if (tokenExp > 0 && now - tokenExp > SESSION_EXPIRATION_DAYS * 24 * 3600) {
+        await AsyncStorage.removeItem('authToken');
+        set({ isLoading: false, isAuthenticated: false, user: null });
+        return;
+      }
+
+      const userData = await getActiveUser();
+      set({
+        isAuthenticated: true,
+        user: {
+          id: decoded.id || '',
+          sesionUser: userData.sesionUser,
+          sesionEmail: userData.sesionEmail,
+          nivel: userData.nivel,
+          balance: userData.balance || 0,
+          isEmailVerified: userData.isEmailVerified || false,
+          isKYCVerified: userData.isKYCVerified || false,
+          profile_pic_url: userData.profile_pic_url || null,
+          profile_pic_updated_at: userData.profile_pic_updated_at || null,
+        },
+        isLoading: false,
+      });
+
+      get().updatePushToken();
+    } catch (error) {
+      await AsyncStorage.removeItem('authToken');
+      set({ isLoading: false, isAuthenticated: false, user: null });
+    }
+  },
 
   login: async (payload) => {
     set({ isLoading: true, error: null });
@@ -76,9 +124,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           balance: userData.balance || 0,
           isEmailVerified: userData.isEmailVerified || false,
           isKYCVerified: userData.isKYCVerified || false,
+          profile_pic_url: userData.profile_pic_url || null,
+          profile_pic_updated_at: userData.profile_pic_updated_at || null,
         },
         isLoading: false,
       });
+
+      get().updatePushToken();
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
       throw error;
@@ -109,11 +161,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             balance: userData.balance || 0,
             isEmailVerified: userData.isEmailVerified || false,
             isKYCVerified: userData.isKYCVerified || false,
+            profile_pic_url: userData.profile_pic_url || null,
+            profile_pic_updated_at: userData.profile_pic_updated_at || null,
           },
           isLoading: false,
         });
       } else {
         set({ isLoading: false });
+      }
+
+      if (get().isAuthenticated) {
+        get().updatePushToken();
       }
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
@@ -123,7 +181,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await AsyncStorage.removeItem('authToken');
-    set({ isAuthenticated: false, user: null });
+    set({ isAuthenticated: false, user: null, isLoading: false });
   },
 
   checkSession: async () => {
@@ -156,6 +214,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           balance: userData.balance || 0,
           isEmailVerified: userData.isEmailVerified || false,
           isKYCVerified: userData.isKYCVerified || false,
+          profile_pic_url: userData.profile_pic_url || null,
+          profile_pic_updated_at: userData.profile_pic_updated_at || null,
         },
         isLoading: false,
       });
@@ -214,6 +274,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
       throw error;
+    }
+  },
+
+  updatePushToken: async () => {
+    try {
+      const pushToken = await getFCMToken();
+      if (pushToken) {
+        await AsyncStorage.setItem('fcmToken', pushToken);
+        const jwtToken = await getToken();
+        if (!jwtToken) return;
+        const baseUrl = process.env.EXPO_PUBLIC_API_URL;
+        await fetch(`${baseUrl}/private/user/push-token`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${jwtToken}`,
+          },
+          body: JSON.stringify({ token: pushToken }),
+        });
+      }
+    } catch (error) {
+      // Silencioso
     }
   },
 }));

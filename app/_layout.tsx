@@ -4,7 +4,7 @@ import { Stack, router, useRootNavigationState, useSegments } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
 import { useColorScheme } from '../presentation/hooks/use-color-scheme';
-import { useAuth } from '../presentation/hooks/useAuth';
+import { useAuth } from '../presentation/store/AuthStore';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -12,22 +12,25 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded, error] = useFonts({ SpaceMono: SpaceMono_400Regular });
   const { isAuthenticated, user, isLoading } = useAuth();
+  const initialize = useAuth((state) => state.initialize);
   const navigationState = useRootNavigationState();
   const segments = useSegments();
   const previousAuthState = useRef<{ isAuthenticated: boolean; isEmailVerified: boolean } | null>(null);
+  const justVerified = useRef(false);
 
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
     } else {
-      const timeout = setTimeout(() => {
-        SplashScreen.hideAsync();
-      }, 5000);
+      const timeout = setTimeout(() => SplashScreen.hideAsync(), 5000);
       return () => clearTimeout(timeout);
     }
   }, [loaded]);
 
-  // Redirigir según estado de autenticación y verificación de email, solo cuando cambie el estado
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
   useEffect(() => {
     if (!navigationState?.key || isLoading) return;
 
@@ -36,7 +39,12 @@ export default function RootLayout() {
       isEmailVerified: user?.isEmailVerified || false,
     };
 
-    // Si el estado no ha cambiado, no hacer nada
+    if (justVerified.current && currentAuth.isEmailVerified) {
+      justVerified.current = false;
+      previousAuthState.current = currentAuth;
+      return;
+    }
+
     if (
       previousAuthState.current &&
       previousAuthState.current.isAuthenticated === currentAuth.isAuthenticated &&
@@ -48,12 +56,14 @@ export default function RootLayout() {
     previousAuthState.current = currentAuth;
 
     if (isAuthenticated) {
-      if (!user?.isEmailVerified) {
-        // Solo redirigir si no estamos ya en la pantalla de verificación
+      if (user?.nivel === 2 && !user?.isEmailVerified) {
         if (segments[0] !== 'auth' || segments[1] !== 'VerifyEmail') {
           router.replace('/auth/VerifyEmail');
         }
-      } else if (!user?.isKYCVerified) {
+        return;
+      }
+
+      if (!user?.isKYCVerified) {
         if (segments[0] !== 'dashboard') {
           router.replace('/dashboard');
         }
@@ -69,6 +79,12 @@ export default function RootLayout() {
     }
   }, [isAuthenticated, isLoading, user?.isEmailVerified, user?.isKYCVerified, segments]);
 
+  useEffect(() => {
+    if (user?.isEmailVerified) {
+      justVerified.current = true;
+    }
+  }, [user?.isEmailVerified]);
+
   if (!loaded && !error) return null;
 
   return (
@@ -78,8 +94,11 @@ export default function RootLayout() {
         <Stack.Screen name="auth/Login" options={{ animation: 'fade' }} />
         <Stack.Screen name="auth/register" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="auth/VerifyEmail" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="auth/forgot-password" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="auth/kyc" options={{ animation: 'fade' }} />
         <Stack.Screen name="dashboard" options={{ animation: 'fade' }} />
+        <Stack.Screen name="dashboard-passenger" options={{ animation: 'fade' }} />
+        <Stack.Screen name="dashboard-driver" options={{ animation: 'fade' }} />
         <Stack.Screen name="shared-rides/index" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="shared-rides/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="my-reservations" options={{ animation: 'slide_from_right' }} />
@@ -89,9 +108,30 @@ export default function RootLayout() {
         <Stack.Screen name="driver/vehicles" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="driver/availability" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="driver/ride-reservation" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="driver/active-trip" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="driver/find-trip" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="driver/trip-detail" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="driver/documentation" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="chat" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="add-balance" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="trip-active" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="trip-waiting" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
+
+        {/* NUEVAS RUTAS PARA COMERCIOS */}
+        <Stack.Screen name="merchant-application" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="restaurants" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="restaurant-menu" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="cart" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="checkout" options={{ animation: 'slide_from_right' }} />
+
+        {/* RUTAS DEL PANEL DEL COMERCIO */}
+        <Stack.Screen name="merchant/dashboard" options={{ animation: 'fade' }} />
+        <Stack.Screen name="merchant/restaurant-edit" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="merchant/categories" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="merchant/products" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="merchant/product-edit" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="merchant/orders" options={{ animation: 'slide_from_right' }} />
       </Stack>
     </ThemeProvider>
   );

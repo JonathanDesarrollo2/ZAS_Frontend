@@ -1,13 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Animated,
-  Image,
-  Dimensions,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Image, Dimensions,
   Alert,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -17,14 +10,12 @@ import LoadingOverlay from '../presentation/components/shared/LoadingOverlay';
 import { connectSocket } from './socket/socketClient';
 import ToastNotification from '../presentation/components/shared/toastNotification';
 import { apiClient } from '../apis/Client';
-import { getActiveTrip } from '../apis/trips'; // ← NUEVO
 import ProfileAvatar from '../components/ProfileAvatar';
 
 type FeatherIconName =
   | 'search' | 'plus-circle' | 'list' | 'truck' | 'toggle-right'
   | 'chevron-right' | 'bell' | 'log-out' | 'menu'
-  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'dollar-sign' | 'mail'
-  | 'alert-triangle' | 'clock' | 'navigation' | 'package' | 'map-pin';
+  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'dollar-sign' | 'mail';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.75;
@@ -37,11 +28,7 @@ const LogoIcon = () => (
 );
 
 const ServiceCard = ({
-  icon,
-  title,
-  desc,
-  onPress,
-  disabled,
+  icon, title, desc, onPress, disabled,
 }: {
   icon: FeatherIconName;
   title: string;
@@ -53,7 +40,6 @@ const ServiceCard = ({
     style={[styles.serviceCard, disabled && { opacity: 0.5 }]}
     onPress={onPress}
     activeOpacity={0.8}
-    disabled={disabled}
   >
     <Feather name={icon} size={24} color="#00C9A7" style={{ marginRight: 16 }} />
     <View style={{ flex: 1 }}>
@@ -71,15 +57,13 @@ const MenuItem = ({ icon, label, onPress }: { icon: FeatherIconName; label: stri
   </TouchableOpacity>
 );
 
-const DashboardScreen = () => {
-  const { user, logout, checkSession, isLoading } = useAuth(); // ← isLoading añadido
+const DashboardDriverScreen = () => {
+  const { user, logout, checkSession } = useAuth();
   const isKYC = user?.isKYCVerified;
   const isEmailVerified = user?.isEmailVerified;
-  const isDriver = user?.nivel === 2;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
@@ -132,50 +116,12 @@ const DashboardScreen = () => {
   useEffect(() => {
     const setupSocket = async () => {
       const socket = await connectSocket();
-      const handleBalanceUpdate = () => {
-        checkSession();
-      };
+      const handleBalanceUpdate = () => { checkSession(); };
       socket.on('balanceUpdated', handleBalanceUpdate);
-      return () => {
-        socket.off('balanceUpdated', handleBalanceUpdate);
-      };
+      return () => { socket.off('balanceUpdated', handleBalanceUpdate); };
     };
     setupSocket();
   }, []);
-
-  // 🔁 NUEVO: Restaurar viaje activo al cargar el dashboard
-  useEffect(() => {
-    if (!user || isLoading) return;
-
-    const checkActiveTrip = async () => {
-      try {
-        const res = await getActiveTrip();
-        if (res.result && res.content) {
-          const trip = res.content;
-          if (user.nivel === 2) {
-            router.replace({
-              pathname: '/driver/active-trip',
-              params: { tripId: trip.id },
-            });
-          } else if (user.nivel === 3) {
-            router.replace({
-              pathname: '/trip-active',
-              params: {
-                tripId: trip.id,
-                driverId: trip.driver_id,
-                driverName: trip.driver?.username || trip.driver?.userlogin || 'Conductor',
-                vehicle: trip.vehicle_type || 'Moto',
-              },
-            });
-          }
-        }
-      } catch (err) {
-        // silencioso
-      }
-    };
-
-    checkActiveTrip();
-  }, [user?.id, user?.nivel, isLoading]);
 
   const handleKYCRequired = () => {
     showToast('KYC requerido: Debes verificar tu identidad primero.');
@@ -207,37 +153,17 @@ const DashboardScreen = () => {
 
   const driverModules = (
     <>
-      <ServiceCard
-        icon="search"
-        title="Encontrar viajes"
-        desc="Ve los viajes que te están esperando"
-        onPress={() => checkDocsAndNavigate('/driver/find-trip')}
-        disabled={!isKYC}
-      />
+      <ServiceCard icon="search" title="Encontrar viajes" desc="Ve los viajes que te están esperando"
+        onPress={() => checkDocsAndNavigate('/driver/find-trip')} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard
-        icon="plus-circle"
-        title="Publicar viaje"
-        desc="Crea un viaje con cupos disponibles"
-        onPress={() => checkDocsAndNavigate('/driver/create-ride')}
-        disabled={!isKYC}
-      />
+      <ServiceCard icon="plus-circle" title="Publicar viaje" desc="Crea un viaje con cupos disponibles"
+        onPress={() => checkDocsAndNavigate('/driver/create-ride')} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard
-        icon="list"
-        title="Mis viajes"
-        desc="Gestiona los viajes que has creado"
-        onPress={isKYC ? () => router.push('/driver/my-rides') : handleKYCRequired}
-        disabled={!isKYC}
-      />
+      <ServiceCard icon="list" title="Mis viajes" desc="Gestiona los viajes que has creado"
+        onPress={isKYC ? () => router.push('/driver/my-rides') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
-      <ServiceCard
-        icon="truck"
-        title="Mis vehículos"
-        desc="Añade, edita y selecciona tu vehículo activo"
-        onPress={isKYC ? () => router.push('/driver/vehicles') : handleKYCRequired}
-        disabled={!isKYC}
-      />
+      <ServiceCard icon="truck" title="Mis vehículos" desc="Añade, edita y selecciona tu vehículo activo"
+        onPress={isKYC ? () => router.push('/driver/vehicles') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
       <ServiceCard
         icon="file-text"
@@ -247,52 +173,14 @@ const DashboardScreen = () => {
         disabled={false}
       />
       <View style={styles.separator} />
-      <ServiceCard
-        icon="toggle-right"
-        title="Disponibilidad"
-        desc="Activa o desactiva tu disponibilidad"
-        onPress={isKYC ? () => router.push('/driver/availability') : handleKYCRequired}
-        disabled={!isKYC}
-      />
-    </>
-  );
-
-  const passengerModules = (
-    <>
-      <ServiceCard
-        icon="navigation"
-        title="Taxis"
-        desc="Viajes compartidos disponibles"
-        onPress={isKYC ? () => router.push('/shared-rides') : handleKYCRequired}
-        disabled={!isKYC}
-      />
-      <View style={styles.separator} />
-      <ServiceCard
-        icon="package"
-        title="Delivery"
-        desc="Pide comida a negocios locales"
-        onPress={isKYC ? () => showToast('Próximamente', 'success') : handleKYCRequired}
-        disabled={!isKYC}
-      />
-      <View style={styles.separator} />
-      <ServiceCard
-        icon="map-pin"
-        title="Pedir Taxi"
-        desc="Solicita un viaje ahora"
-        onPress={isKYC ? () => router.push('/request-ride') : handleKYCRequired}
-        disabled={!isKYC}
-      />
+      <ServiceCard icon="toggle-right" title="Disponibilidad" desc="Activa o desactiva tu disponibilidad"
+        onPress={isKYC ? () => router.push('/driver/availability') : handleKYCRequired} disabled={!isKYC} />
     </>
   );
 
   return (
     <View style={styles.screen}>
-      <ToastNotification
-        visible={toastVisible}
-        message={toastMsg}
-        type={toastType}
-        onHide={() => setToastVisible(false)}
-      />
+      <ToastNotification visible={toastVisible} message={toastMsg} type={toastType} onHide={() => setToastVisible(false)} />
       <LoadingOverlay visible={spinnerVisible} message="Cerrando sesión..." />
 
       {menuOpen && (
@@ -303,8 +191,8 @@ const DashboardScreen = () => {
 
       <Animated.View style={[styles.menuPanel, { transform: [{ translateX: menuSlide }] }]}>
         <View style={styles.menuHeader}>
-          <ProfileAvatar size={95} />
-          <View style={{ flex: 1, marginLeft: 8 }}>
+          <ProfileAvatar size={50} />
+          <View style={{ flex: 1, marginLeft: 14 }}>
             <Text style={styles.menuUserName}>{user?.sesionUser || 'Usuario'}</Text>
             <Text style={styles.menuUserEmail}>{user?.sesionEmail || ''}</Text>
           </View>
@@ -314,38 +202,10 @@ const DashboardScreen = () => {
         </View>
 
         <ScrollView style={styles.menuScroll} contentContainerStyle={{ paddingBottom: 30 }}>
-          <MenuItem
-            icon="shield"
-            label="Verificación"
-            onPress={() => {
-              closeMenu();
-              router.push('/verification' as any);
-            }}
-          />
-          <MenuItem
-            icon="mail"
-            label="Verificar correo"
-            onPress={() => {
-              closeMenu();
-              router.push('/auth/VerifyEmail');
-            }}
-          />
-          <MenuItem
-            icon="file-text"
-            label="Historial"
-            onPress={() => {
-              closeMenu();
-              showToast('Historial próximamente', 'error');
-            }}
-          />
-          <MenuItem
-            icon="credit-card"
-            label="Cuenta Bancaria"
-            onPress={() => {
-              closeMenu();
-              router.push('/bank-account' as any);
-            }}
-          />
+          <MenuItem icon="shield" label="Verificación" onPress={() => { closeMenu(); router.push('/verification' as any); }} />
+          <MenuItem icon="mail" label="Verificar correo" onPress={() => { closeMenu(); router.push('/auth/VerifyEmail'); }} />
+          <MenuItem icon="file-text" label="Historial" onPress={() => { closeMenu(); showToast('Historial próximamente', 'error'); }} />
+          <MenuItem icon="credit-card" label="Cuenta Bancaria" onPress={() => { closeMenu(); router.push('/bank-account' as any); }} />
           <View style={styles.menuDivider} />
           <MenuItem icon="log-out" label="Cerrar sesión" onPress={handleLogout} />
         </ScrollView>
@@ -358,21 +218,14 @@ const DashboardScreen = () => {
           </TouchableOpacity>
           <LogoIcon />
           <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
-            <Text style={styles.balanceMini}>
-              ${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}
-            </Text>
+            <Text style={styles.balanceMini}>${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}</Text>
             <TouchableOpacity onPress={() => router.push('/notifications')}>
               <Feather name="bell" size={24} color="#1F2937" />
             </TouchableOpacity>
           </View>
         </View>
 
-        <ScrollView
-          style={styles.scrollArea}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Text style={styles.greeting}>Hola, {user?.sesionUser || 'Usuario'}</Text>
 
           <View style={styles.bannersContainer}>
@@ -396,24 +249,16 @@ const DashboardScreen = () => {
             )}
           </View>
 
-          <TouchableOpacity
-            style={styles.balanceCard}
-            onPress={() => router.push('/add-balance')}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={styles.balanceCard} onPress={() => router.push('/add-balance')} activeOpacity={0.8}>
             <Feather name="dollar-sign" size={20} color="#00C9A7" style={{ marginRight: 10 }} />
             <View style={{ flex: 1 }}>
               <Text style={styles.balanceLabel}>Saldo disponible</Text>
-              <Text style={styles.balanceAmount}>
-                ${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}
-              </Text>
+              <Text style={styles.balanceAmount}>${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}</Text>
             </View>
             <Feather name="plus-circle" size={22} color="#00C9A7" />
           </TouchableOpacity>
 
-          <View style={styles.servicesContainer}>
-            {isDriver ? driverModules : passengerModules}
-          </View>
+          <View style={styles.servicesContainer}>{driverModules}</View>
 
           <Text style={styles.sectionTitle}>Actividad reciente</Text>
           <View style={styles.emptyActivity}>
@@ -435,165 +280,48 @@ const DashboardScreen = () => {
   );
 };
 
-// Estilos (idénticos)
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   mainContainer: { flex: 1, paddingHorizontal: 20, paddingTop: 60 },
   topBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
-  logoContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: '#E6FFFA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#00C9A7',
-  },
+  logoContainer: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#E6FFFA', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#00C9A7' },
   logoImage: { width: 32, height: 32 },
-  pinDot: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#00C9A7',
-  },
+  pinDot: { position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: '#00C9A7' },
   scrollArea: { flex: 1 },
   scrollContent: { paddingBottom: 40 },
   greeting: { fontSize: 28, fontWeight: '700', color: '#1F2937', marginBottom: 24 },
   bannersContainer: { marginBottom: 16 },
-  compactWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF3E0',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    marginBottom: 8,
-    gap: 6,
-  },
+  compactWarning: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF3E0', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 8, gap: 6 },
   compactWarningText: { color: '#E65100', fontSize: 13, flex: 1 },
   compactLink: { color: '#3c87f7', fontWeight: '600', fontSize: 13 },
-  balanceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#E5F5F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
+  balanceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#E5F5F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
   balanceLabel: { color: '#6B7280', fontSize: 14 },
   balanceAmount: { color: '#1F2937', fontSize: 22, fontWeight: '700', marginTop: 4 },
-  servicesContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    marginBottom: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#E5F5F0',
-    overflow: 'hidden',
-  },
+  servicesContainer: { backgroundColor: '#FFFFFF', borderRadius: 20, marginBottom: 28, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3, borderWidth: 1, borderColor: '#E5F5F0', overflow: 'hidden' },
   serviceCard: { flexDirection: 'row', alignItems: 'center', padding: 18 },
   separator: { height: 1, backgroundColor: '#E5F5F0', marginHorizontal: 18 },
   serviceTitle: { color: '#1F2937', fontSize: 18, fontWeight: '600', marginBottom: 4 },
   serviceDesc: { color: '#6B7280', fontSize: 14 },
   sectionTitle: { color: '#6B7280', fontSize: 16, fontWeight: '600', marginBottom: 16 },
-  emptyActivity: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E5F5F0',
-  },
+  emptyActivity: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E5F5F0' },
   emptyText: { color: '#1F2937', fontSize: 17, fontWeight: '600', marginTop: 16 },
   emptySub: { color: '#6B7280', fontSize: 14, marginTop: 8 },
-  footer: {
-    borderTopWidth: 1,
-    borderColor: '#E5F5F0',
-    paddingTop: 20,
-    marginTop: 20,
-    alignItems: 'center',
-  },
+  footer: { borderTopWidth: 1, borderColor: '#E5F5F0', paddingTop: 20, marginTop: 20, alignItems: 'center' },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   logoutText: { color: '#6B7280', fontWeight: '500' },
   footerText: { color: '#888', fontSize: 12 },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    zIndex: 10,
-  },
-  menuPanel: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    width: MENU_WIDTH,
-    backgroundColor: '#FFFFFF',
-    zIndex: 20,
-    borderTopRightRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 4, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 15,
-    paddingTop: 60,
-  },
-  menuHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderColor: '#E5F5F0',
-    marginBottom: 8,
-  },
-  menuAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#E6FFFA',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 10 },
+  menuPanel: { position: 'absolute', top: 0, left: 0, bottom: 0, width: MENU_WIDTH, backgroundColor: '#FFFFFF', zIndex: 20, borderTopRightRadius: 24, borderBottomRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 15, paddingTop: 60 },
+  menuHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 20, borderBottomWidth: 1, borderColor: '#E5F5F0', marginBottom: 8 },
+  menuAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#E6FFFA', justifyContent: 'center', alignItems: 'center' },
   menuUserName: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
   menuUserEmail: { fontSize: 13, color: '#6B7280', marginTop: 2 },
   menuCloseBtn: { padding: 8 },
   menuScroll: { flex: 1, paddingHorizontal: 20 },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
-  },
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
   menuItemText: { fontSize: 16, fontWeight: '500', color: '#1F2937' },
   menuDivider: { height: 1, backgroundColor: '#E5F5F0', marginVertical: 8 },
-  balanceMini: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#00C9A7',
-    backgroundColor: '#E6FFFA',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
+  balanceMini: { fontSize: 16, fontWeight: '700', color: '#00C9A7', backgroundColor: '#E6FFFA', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, overflow: 'hidden' },
 });
 
-export default DashboardScreen;
+export default DashboardDriverScreen;

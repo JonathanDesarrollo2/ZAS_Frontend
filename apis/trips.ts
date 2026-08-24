@@ -58,6 +58,9 @@ export const startTrip = async (tripId: string) => {
 export const completeTrip = async (tripId: string) => {
   return apiClient(`/private/trips/${tripId}/complete`, { method: 'PUT' });
 };
+export const getActiveTrip = async (): Promise<any> => {
+  return apiClient('/private/trips/active');
+};
 export const estimatePrice = async (
   pickup_lat: number, pickup_lng: number,
   dropoff_lat: number, dropoff_lng: number
@@ -66,4 +69,6 @@ export const estimatePrice = async (
     `/private/trips/estimate-price?pickup_lat=${pickup_lat}&pickup_lng=${pickup_lng}&dropoff_lat=${dropoff_lat}&dropoff_lng=${dropoff_lng}`
   );
   return res.content.price;
+
+  
 };

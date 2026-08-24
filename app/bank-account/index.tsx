@@ -7,16 +7,31 @@ import { Feather } from '@expo/vector-icons';
 import { apiClient } from '../../apis/Client';
 
 const BANKS = [
-  { code: '0102', name: '0102 - Banco de Venezuela' },
-  { code: '0104', name: '0104 - Venezolano de Crédito' },
-  { code: '0105', name: '0105 - Mercantil' },
-  { code: '0114', name: '0114 - Bancaribe' },
-  { code: '0115', name: '0115 - Banesco' },
-  { code: '0116', name: '0116 - BNC' },
-  { code: '0128', name: '0128 - Banco Caroní' },
-  { code: '0134', name: '0134 - Banesco' },
-  { code: '0138', name: '0138 - BNC' },
-  { code: '0108', name: '0108 - Provincial' },
+  { code: '0102', name: 'Banco de Venezuela' },
+  { code: '0104', name: 'Venezolano de Crédito' },
+  { code: '0105', name: 'Mercantil' },
+  { code: '0108', name: 'Provincial' },
+  { code: '0114', name: 'Bancaribe' },
+  { code: '0115', name: 'Banco Exterior' },
+  { code: '0116', name: 'Banco Nacional de Crédito (BNC - Antiguo BOD)' },
+  { code: '0128', name: 'Banco Caroní' },
+  { code: '0134', name: 'Banesco' },
+  { code: '0137', name: 'Banco Sofitasa' },
+  { code: '0138', name: 'Banco Plaza' },
+  { code: '0146', name: 'Banco de la Gente Emprendedora (Bangente)' },
+  { code: '0151', name: 'BFC Banco Fondo Común' },
+  { code: '0156', name: '100% Banco' },
+  { code: '0157', name: 'Banco Del Sur (DelSur)' },
+  { code: '0163', name: 'Banco del Tesoro' },
+  { code: '0166', name: 'Banco Agrícola de Venezuela' },
+  { code: '0168', name: 'Bancrecer' },
+  { code: '0169', name: 'Mi Banco' },
+  { code: '0171', name: 'Banco Activo' },
+  { code: '0172', name: 'Bancamiga' },
+  { code: '0174', name: 'Banplus' },
+  { code: '0175', name: 'Banco Digital de los Trabajadores (BDT / Antiguo Bicentenario)' },
+  { code: '0177', name: 'Banco de la Fuerza Armada Nacional Bolivariana (BANFANB)' },
+  { code: '0191', name: 'Banco Nacional de Crédito (BNC)' }
 ];
 
 const Toast = ({ message, type = 'error', visible, onHide }: { message: string; type?: 'error' | 'success'; visible: boolean; onHide: () => void }) => {
@@ -105,7 +120,7 @@ const BankAccountScreen = () => {
   };
 
   const selectedBank = BANKS.find(b => b.code === bankCode);
-  const bankLabel = selectedBank ? `${selectedBank.code} - ${selectedBank.name.split(' - ')[1]}` : 'Selecciona tu banco';
+  const bankLabel = selectedBank ? selectedBank.name : 'Selecciona tu banco';
 
   return (
     <View style={styles.screen}>
@@ -138,7 +153,7 @@ const BankAccountScreen = () => {
                     onPress={() => { setBankCode(bank.code); setShowBankPicker(false); }}
                   >
                     <Text style={[styles.pickerItemText, bankCode === bank.code && styles.pickerItemTextSelected]}>
-                      {bank.code} - {bank.name}
+                      {bank.name}
                     </Text>
                   </TouchableOpacity>
                 ))}

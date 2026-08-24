@@ -4,17 +4,19 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAuth } from '../../presentation/hooks/useAuth';
+import { useAuth } from '../../presentation/store/AuthStore';
 
 const KYCScreen = () => {
-  const { startKYC, checkKYCStatus, isLoading, checkSession } = useAuth();
+  const { startKYC, checkKYCStatus, isLoading, checkSession, isAuthenticated } = useAuth();
   const [status, setStatus] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    handleCheckStatus();
-  }, []);
+    if (isAuthenticated) {
+      handleCheckStatus();
+    }
+  }, [isAuthenticated]);
 
   const handleCheckStatus = async () => {
     setChecking(true);
@@ -64,6 +66,15 @@ const KYCScreen = () => {
       ]
     );
   };
+
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#00C9A7" />
+        <Text style={{ marginTop: 12, color: '#6B7280' }}>Cargando sesión...</Text>
+      </View>
+    );
+  }
 
   if (checking) {
     return (

@@ -16,13 +16,11 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getMessages, sendMessage, ChatMessage } from '../apis/chat';
 import { connectSocket } from './socket/socketClient';
-import { useAuth } from '../presentation/hooks/useAuth';
+import { useAuth } from '../presentation/store/AuthStore'; // ✅ importación corregida
 
 const ARRIVED_KEY_PREFIX = 'arrived_';
 
-// Espaciado seguro para que la barra no choque con los botones físicos/gestos del teléfono
 const BASE_BOTTOM_PADDING = Platform.OS === 'ios' ? 34 : 28;
-// Margen estético superior al teclado cuando está abierto (estilo WhatsApp)
 const KEYBOARD_OPEN_PADDING = 8;
 
 const ChatScreen = () => {
@@ -33,22 +31,18 @@ const ChatScreen = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const flatListRef = useRef<FlatList>(null);
-  const { user } = useAuth();
+  const { user } = useAuth(); // ahora user.id existe
   const [bottomPadding, setBottomPadding] = useState(BASE_BOTTOM_PADDING);
 
-  // Control del teclado: cambia el padding inferior de la barra
+  // Control del teclado
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => {
       setBottomPadding(KEYBOARD_OPEN_PADDING);
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 50);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setBottomPadding(BASE_BOTTOM_PADDING);
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 50);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
     });
     return () => {
       showSub.remove();
@@ -135,7 +129,7 @@ const ChatScreen = () => {
       );
     }
 
-    const isMine = user?.id === item.sender_id;
+    const isMine = user?.id === item.sender_id; // ✅ ya no da error
 
     return (
       <View style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble]}>
@@ -169,20 +163,16 @@ const ChatScreen = () => {
         ref={flatListRef}
         data={messages}
         keyExtractor={item => item.id.toString()}
-        style={styles.chatList} // Aplica flex: 1 y el fondo aquí
+        style={styles.chatList}
         contentContainerStyle={styles.listContent}
-        /* Fuerza el scroll al fondo cada vez que la lista cambia de tamaño (cuando abre/cierra teclado) */
         onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        onContentSizeChange={() =>
-          flatListRef.current?.scrollToEnd({ animated: true })
-        }
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         renderItem={renderItem}
         ListEmptyComponent={
           <Text style={styles.empty}>No hay mensajes aún</Text>
         }
       />
 
-      {/* Barra de entrada con padding dinámico */}
       <View style={[styles.inputWrapper, { paddingBottom: bottomPadding }]}>
         <View style={styles.inputRow}>
           <TextInput
@@ -202,10 +192,11 @@ const ChatScreen = () => {
   );
 };
 
+// Los estilos permanecen exactamente igual
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FFFFFF' },
   chatList: { 
-    flex: 1, // Crucial: obliga a la lista a contraerse dinámicamente con el teclado
+    flex: 1,
     backgroundColor: '#F0FDF9' 
   },
   listContent: { 

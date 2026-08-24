@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "551193922617",
+    "project_id": "zas-noti-backend",
+    "storage_bucket": "zas-noti-backend.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:551193922617:android:5e4595b43bd8a6dd3b11e8",
+        "android_client_info": {
+          "package_name": "com.zas.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0f1yCFy5H1q9w7Au7hNMCRb9bezzDkbo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

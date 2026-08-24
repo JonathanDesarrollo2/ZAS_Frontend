@@ -1,10 +1,9 @@
-// src/apis/client.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// La URL base se toma de la variable de entorno; si no existe, usa localhost:8080/api
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080/api';
+// La URL viene EXCLUSIVAMENTE de la variable de entorno definida en eas.json
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-const getToken = async (): Promise<string | null> => {
+export const getToken = async (): Promise<string | null> => {
   try {
     return await AsyncStorage.getItem('authToken');
   } catch {
@@ -29,16 +28,18 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
   };
 
   const response = await fetch(`${BASE_URL}${endpoint}`, { ...options, headers });
+
+  // ✅ Renovar token si el backend envía 'newtoken' en el header
+  const newToken = response.headers.get('newtoken');
+  if (newToken) {
+    await setToken(newToken);
+  }
+
   const data = await response.json();
 
   if (!response.ok) {
     const errorMessage = data.error?.[0] || 'Error desconocido';
     throw new Error(errorMessage);
-  }
-
-  const newToken = data.content?.newToken;
-  if (newToken) {
-    await setToken(newToken);
   }
 
   return data;

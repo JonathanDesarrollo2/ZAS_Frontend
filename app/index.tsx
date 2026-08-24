@@ -1,43 +1,20 @@
-// app/index.tsx
-import { View, ActivityIndicator, StyleSheet, Image, Text } from 'react-native';
 import { useEffect } from 'react';
-import { useAuth } from '../presentation/hooks/useAuth';
-import { router } from 'expo-router';
+import { View, ActivityIndicator, StyleSheet, Image, Text } from 'react-native';
+import { router } from 'expo-router'
+import { useAuth } from '../presentation/store/AuthStore';   // ← importa useAuth
 
 const IndexScreen = () => {
-  const { checkSession, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated } = useAuth();
 
   useEffect(() => {
-    checkSession();
-  }, []);
-
-  useEffect(() => {
-    if (isAuthenticated !== undefined) {
-      if (isAuthenticated) {
-        router.replace('/dashboard');
-      } else {
-        router.replace('/auth/Login');
-      }
+    if (!isLoading) {
+      router.replace(isAuthenticated ? '/dashboard' : '/auth/Login');
     }
-  }, [isAuthenticated]);
-
-  // Seguridad: si después de 8 segundos no se ha resuelto la sesión, forzar ida al login
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (isAuthenticated === undefined) {
-        router.replace('/auth/Login');
-      }
-    }, 8000);
-    return () => clearTimeout(timeout);
-  }, [isAuthenticated]);
+  }, [isLoading, isAuthenticated]);
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require('../assets/images/logo.png')}
-        style={styles.logo}
-        resizeMode="contain"
-      />
+      <Image source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>ZAS</Text>
       <ActivityIndicator size="large" color="#FFFFFF" style={{ marginTop: 30 }} />
       <Text style={styles.subtitle}>Cargando...</Text>
@@ -53,13 +30,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: { width: 120, height: 120, marginBottom: 20 },
-  title: {
-    fontSize: 48,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    fontFamily: 'SpaceMono',
-    letterSpacing: 6,
-  },
+  title: { fontSize: 48, fontWeight: '600', color: '#FFFFFF', fontFamily: 'SpaceMono', letterSpacing: 6 },
   subtitle: { color: '#FFFFFF', fontSize: 16, marginTop: 10, fontWeight: '500' },
 });
 

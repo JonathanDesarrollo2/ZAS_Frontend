@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAuth } from '../../presentation/hooks/useAuth';
+import { useAuth } from '../../presentation/store/AuthStore';
 
 // ---------- Toast ----------
 const Toast = ({ message, type = 'error', visible, onHide }: { message: string; type?: 'error' | 'success'; visible: boolean; onHide: () => void }) => {
@@ -47,7 +47,7 @@ const RegisterScreen = () => {
   const [password, setPassword] = useState('');
   const [repass, setRepass] = useState('');
   const [nivel, setNivel] = useState(3);
-  const { register, isLoading } = useAuth();
+  const { register, isLoading, isAuthenticated } = useAuth();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -57,6 +57,13 @@ const RegisterScreen = () => {
       Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
   }, []);
+
+  // Redirigir al dashboard cuando la sesión esté activa después del registro
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/dashboard');  // ← cambiado: antes era /auth/VerifyEmail
+    }
+  }, [isAuthenticated]);
 
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
@@ -85,9 +92,6 @@ const RegisterScreen = () => {
         userrepass: repass,
         nivel,
       });
-      showToast('Registro exitoso, verifica tu correo', 'success');
-      // Redirigir directamente a la pantalla de verificación de correo
-      setTimeout(() => router.replace('/auth/VerifyEmail'), 500);
     } catch (err: any) {
       let msg = err?.message || 'Error al registrarse';
       if (msg === 'Invalid value') msg = 'Datos inválidos, revisa la información';

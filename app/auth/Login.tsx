@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAuth } from '../../presentation/hooks/useAuth';
+import { useAuth } from '../../presentation/store/AuthStore';   // importamos useAuth
 
 // ---------- Toast ----------
 const Toast = ({ message, type = 'error', visible, onHide }: { message: string; type?: 'error' | 'success'; visible: boolean; onHide: () => void }) => {
@@ -43,7 +43,8 @@ const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { login, isLoading } = useAuth();
+  const { login } = useAuth();                      // función de login del store
+  const [isLoading, setIsLoading] = useState(false);  // estado local para el botón
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -68,14 +69,24 @@ const LoginScreen = () => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) return showToast('Correo electrónico inválido');
     if (!password) return showToast('La contraseña es requerida');
     if (password.length < 6) return showToast('La contraseña debe tener al menos 6 caracteres');
+
+    setIsLoading(true);
+
     try {
-      await login({ usermail: trimmedEmail, userpass: password });
+      await Promise.race([
+        login({ usermail: trimmedEmail, userpass: password }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Tiempo de espera agotado')), 15000))
+      ]);
+
       showToast('¡Bienvenido! Redirigiendo...', 'success');
       setTimeout(() => router.replace('/dashboard'), 1000);
     } catch (err: any) {
       let mensaje = err?.message || 'Error al iniciar sesión';
       if (mensaje === 'Invalid value') mensaje = 'Correo o contraseña incorrectos';
+      if (mensaje === 'Tiempo de espera agotado') mensaje = 'El servidor no responde. Intenta de nuevo.';
       showToast(mensaje);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -84,7 +95,6 @@ const LoginScreen = () => {
       <Toast message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
       <View style={styles.innerContainer}>
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], alignItems: 'center', marginBottom: 40 }}>
-          {/* Solo la imagen del logo, sin fondo */}
           <Image
             source={require('../../assets/images/logo.png')}
             style={styles.logo}
@@ -114,6 +124,11 @@ const LoginScreen = () => {
           <TouchableOpacity onPress={() => router.push('/auth/register')} style={{ marginTop: 24 }}>
             <Text style={styles.linkText}>¿No tienes cuenta? <Text style={{ color: '#00C9A7', fontWeight: '600' }}>Regístrate</Text></Text>
           </TouchableOpacity>
+
+          {/* NUEVO: enlace para recuperar contraseña */}
+          <TouchableOpacity onPress={() => router.push('/auth/forgot-password')} style={{ marginTop: 16 }}>
+            <Text style={styles.linkText}>¿Olvidaste tu contraseña?</Text>
+          </TouchableOpacity>
         </Animated.View>
       </View>
     </KeyboardAvoidingView>
@@ -123,11 +138,7 @@ const LoginScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0fdf9' },
   innerContainer: { flex: 1, justifyContent: 'center', paddingHorizontal: 30 },
-  logo: {
-    width: 120,       // Ajusta según el tamaño deseado
-    height: 120,
-    marginBottom: 20,
-  },
+  logo: { width: 120, height: 120, marginBottom: 20 },
   appName: { fontSize: 32, fontWeight: '800', color: '#1f2937', marginBottom: 4 },
   subtitle: { fontSize: 14, color: '#6b7280' },
   inputRow: {

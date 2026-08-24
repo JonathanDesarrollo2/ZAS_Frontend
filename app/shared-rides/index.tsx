@@ -12,7 +12,7 @@ import {
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { getAvailableRides, SharedRide } from '../../apis/sharedRides';
-import { useAuth } from '../../presentation/hooks/useAuth'; // 👈 importamos el hook de autenticación
+import { useAuth } from '../../presentation/store/AuthStore';
 
 const SharedRidesListScreen = () => {
   const [rides, setRides] = useState<SharedRide[]>([]);

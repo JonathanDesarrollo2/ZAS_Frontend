@@ -5,28 +5,16 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useAuth } from '../presentation/hooks/useAuth';
 import { requestTopup } from '../apis/balance';
+import { useAuth } from '../presentation/store/AuthStore';
+import { apiClient } from '../apis/Client';
 
-// ---- Constantes ----
 const BANK_INFO = {
   bank: 'Provincial (0108)',
   account: '30483682',
   phone: '04121998668',
-  holder: 'ZAS Movilidad',
+  holder: 'Jonathan Jesus Blanco Solano',
 };
-
-const COTIZAVE_API_KEY = 'ctz_live_3sN7IBdxdW8KMZqLi8RnDLoTSfi5b1RkaCYljQ';
-const COTIZAVE_URL = 'https://api.cotizave.com/v1/fx/rates';
-
-interface CotizaveRate {
-  market: string;
-  type: string;
-  ask: number | null;
-  bid: number | null;
-  mid: number;
-  updated_at: string;
-}
 
 const AddBalanceScreen = () => {
   const { user } = useAuth();
@@ -34,32 +22,81 @@ const AddBalanceScreen = () => {
   const [reference, setReference] = useState('');
   const [dolarRate, setDolarRate] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawInfo, setWithdrawInfo] = useState<{ canWithdraw: boolean; nextAllowedAt: string | null; lastWithdrawalAt: string | null } | null>(null);
+  const [hasBankAccount, setHasBankAccount] = useState<boolean>(false);
+  const [checkingBankAccount, setCheckingBankAccount] = useState(false);
 
   const currentBalance = Number(user?.balance) || 0;
   const isDriver = user?.nivel === 2;
   const parsedAmount = parseFloat(amount);
 
-  // Obtener tasa BCV
+  // Obtener tasa desde el backend (cacheada)
   useEffect(() => {
     let cancelled = false;
     const fetchRate = async () => {
       try {
-        const res = await fetch(COTIZAVE_URL, {
-          headers: { 'X-API-Key': COTIZAVE_API_KEY, 'Accept': 'application/json' },
-        });
-        if (!res.ok) return;
+        const baseUrl = process.env.EXPO_PUBLIC_API_URL;
+        const res = await fetch(`${baseUrl}/public/exchange-rate`);
         const data = await res.json();
-        if (!cancelled) {
-          const bcvRate = (data.rates as CotizaveRate[]).find(r => r.market === 'reference');
-          if (bcvRate) setDolarRate(bcvRate.mid);
+        if (!cancelled && data.result && data.content) {
+          setDolarRate(data.content.rate);
         }
-      } catch (err) {}
+      } catch (err) {
+        // silencioso
+      }
     };
     fetchRate();
     return () => { cancelled = true; };
   }, []);
 
+  // Obtener info de retiro si es conductor
+  useEffect(() => {
+    if (!isDriver) return;
+    const fetchInfo = async () => {
+      try {
+        const res = await apiClient<{ result: boolean; content: any; error?: string[] }>('/private/withdrawals/info');
+        if (res.result && res.content) {
+          setWithdrawInfo(res.content);
+        }
+      } catch (err) {
+        // silencioso
+      }
+    };
+    fetchInfo();
+  }, [isDriver]);
+
+  // Verificar cuenta bancaria al cargar
+  useEffect(() => {
+    const checkBankAccount = async () => {
+      setCheckingBankAccount(true);
+      try {
+        const res = await apiClient<{ result: boolean; content: any; error?: string[] }>('/private/bank-account');
+        if (res.result) {
+          setHasBankAccount(!!res.content);
+        }
+      } catch (err) {
+        setHasBankAccount(false);
+      } finally {
+        setCheckingBankAccount(false);
+      }
+    };
+    checkBankAccount();
+  }, []);
+
   const handleSubmit = async () => {
+    if (!hasBankAccount) {
+      Alert.alert(
+        'Cuenta bancaria requerida',
+        'Debes registrar tu cuenta bancaria antes de realizar operaciones de saldo.',
+        [
+          { text: 'Cancelar' },
+          { text: 'Registrar ahora', onPress: () => router.push('/bank-account') }
+        ]
+      );
+      return;
+    }
+
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       Alert.alert('Monto inválido', 'Ingresa un monto mayor a $0.00');
       return;
@@ -81,6 +118,60 @@ const AddBalanceScreen = () => {
     }
   };
 
+  const handleWithdraw = async () => {
+    if (!isDriver) return;
+
+    if (!hasBankAccount) {
+      Alert.alert(
+        'Cuenta bancaria requerida',
+        'Debes registrar tu cuenta bancaria antes de solicitar un retiro.',
+        [
+          { text: 'Cancelar' },
+          { text: 'Registrar ahora', onPress: () => router.push('/bank-account') }
+        ]
+      );
+      return;
+    }
+
+    if (!withdrawInfo?.canWithdraw) {
+      const next = withdrawInfo?.nextAllowedAt ? new Date(withdrawInfo.nextAllowedAt) : null;
+      const message = next
+        ? `Solo puedes retirar cada 5 horas. Próximo retiro disponible: ${next.toLocaleString()}`
+        : 'Solo puedes retirar cada 5 horas. Aún no tienes información.';
+      Alert.alert('Retiro no disponible', message);
+      return;
+    }
+
+    // Validar saldo positivo
+    if (currentBalance <= 0) {
+      Alert.alert('Sin saldo', 'No tienes saldo disponible para retirar.');
+      return;
+    }
+
+    setWithdrawing(true);
+    try {
+      // Se envía SIEMPRE el saldo completo
+      const res = await apiClient<{ result: boolean; content: any; error?: string[] }>('/private/withdrawals', {
+        method: 'POST',
+        body: JSON.stringify({ amount: currentBalance }),
+      });
+      if (res.result) {
+        Alert.alert('Solicitud enviada', `Has solicitado retirar $${currentBalance.toFixed(2)}. Queda pendiente de aprobación.`);
+        // Actualizar info
+        const infoRes = await apiClient<{ result: boolean; content: any; error?: string[] }>('/private/withdrawals/info');
+        if (infoRes.result) setWithdrawInfo(infoRes.content);
+      } else {
+        Alert.alert('Error', res.error?.[0] || 'No se pudo enviar la solicitud');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'No se pudo enviar la solicitud');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
+  const nextWithdrawalDate = withdrawInfo?.nextAllowedAt ? new Date(withdrawInfo.nextAllowedAt) : null;
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -90,7 +181,7 @@ const AddBalanceScreen = () => {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.titleRow}>
           <Text style={styles.title}>Añadir saldo</Text>
-          {dolarRate && (
+          {dolarRate !== null && dolarRate > 0 && (
             <Text style={styles.rateBadge}>BCV: {dolarRate.toFixed(2)}</Text>
           )}
         </View>
@@ -106,6 +197,13 @@ const AddBalanceScreen = () => {
           <Text style={styles.bankText}>Tel: {BANK_INFO.phone} | Titular: {BANK_INFO.holder}</Text>
         </View>
 
+        {!hasBankAccount && !checkingBankAccount && (
+          <TouchableOpacity style={styles.bankWarning} onPress={() => router.push('/bank-account')}>
+            <Feather name="alert-circle" size={16} color="#FF9800" style={{ marginRight: 6 }} />
+            <Text style={styles.bankWarningText}>Registra tu cuenta bancaria para operar tu saldo</Text>
+          </TouchableOpacity>
+        )}
+
         {isDriver && (
           <View style={styles.warningBox}>
             <Feather name="alert-triangle" size={14} color="#FF9800" style={{ marginRight: 6 }} />
@@ -113,6 +211,7 @@ const AddBalanceScreen = () => {
           </View>
         )}
 
+        {/* Sección de recarga */}
         <Text style={styles.label}>Monto a transferir (USD)</Text>
         <View style={styles.inputRow}>
           <Feather name="dollar-sign" size={18} color="#00C9A7" style={{ marginRight: 10 }} />
@@ -126,7 +225,7 @@ const AddBalanceScreen = () => {
           />
         </View>
 
-        {!isNaN(parsedAmount) && parsedAmount > 0 && dolarRate && (
+        {!isNaN(parsedAmount) && parsedAmount > 0 && dolarRate !== null && (
           <Text style={styles.conversionText}>≈ {(parsedAmount * dolarRate).toFixed(2)} VES</Text>
         )}
 
@@ -157,6 +256,61 @@ const AddBalanceScreen = () => {
             </>
           )}
         </TouchableOpacity>
+
+        {/* Sección de retiro SOLO para conductores */}
+        {isDriver && (
+          <View style={styles.withdrawSection}>
+            <View style={styles.withdrawHeader}>
+              <Feather name="arrow-down-circle" size={20} color="#00C9A7" style={{ marginRight: 8 }} />
+              <Text style={styles.withdrawTitle}>Retirar Dinero</Text>
+            </View>
+
+            {/* Mostrar saldo disponible */}
+            <View style={styles.withdrawBalanceBox}>
+              <Text style={styles.withdrawBalanceLabel}>Saldo disponible para retirar:</Text>
+              <Text style={styles.withdrawBalanceAmount}>${currentBalance.toFixed(2)}</Text>
+            </View>
+
+            {/* Cooldown */}
+            {withdrawInfo && !withdrawInfo.canWithdraw && nextWithdrawalDate && (
+              <View style={styles.cooldownBox}>
+                <Feather name="clock" size={16} color="#FF9800" style={{ marginRight: 6 }} />
+                <Text style={styles.cooldownText}>
+                  Solo puedes retirar cada 5 horas. Próximo retiro: {nextWithdrawalDate.toLocaleString()}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.withdrawButton,
+                (withdrawing || Boolean(withdrawInfo && !withdrawInfo.canWithdraw) || currentBalance <= 0) && { opacity: 0.7 }
+              ]}
+              onPress={handleWithdraw}
+              disabled={withdrawing || Boolean(withdrawInfo && !withdrawInfo.canWithdraw) || currentBalance <= 0}
+              activeOpacity={0.8}
+            >
+              {withdrawing ? (
+                <ActivityIndicator color="#00C9A7" />
+              ) : (
+                <>
+                  <Feather name="arrow-down-circle" size={18} color="#00C9A7" style={{ marginRight: 8 }} />
+                  <Text style={styles.withdrawButtonText}>
+                    Solicitar retiro de ${currentBalance.toFixed(2)}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Nota sobre demora */}
+        <View style={styles.noteContainer}>
+          <Feather name="clock" size={14} color="#6B7280" style={{ marginRight: 6 }} />
+          <Text style={styles.noteText}>
+            El retiro o ingreso de saldo puede demorar unos minutos u horas. Por favor, sea paciente.
+          </Text>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -204,6 +358,15 @@ const styles = StyleSheet.create({
   },
   bankTitle: { fontWeight: '600', color: '#1F2937', marginBottom: 6 },
   bankText: { color: '#374151', fontSize: 14, marginBottom: 2 },
+  bankWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 16,
+  },
+  bankWarningText: { color: '#E65100', fontSize: 14, flex: 1 },
   warningBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,6 +411,76 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   buttonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+  withdrawSection: {
+    marginTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingTop: 20,
+  },
+  withdrawHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  withdrawTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  withdrawBalanceBox: {
+    backgroundColor: '#E6FFFA',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  withdrawBalanceLabel: {
+    fontSize: 14,
+    color: '#374151',
+    marginBottom: 4,
+  },
+  withdrawBalanceAmount: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#00C9A7',
+  },
+  cooldownBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 16,
+  },
+  cooldownText: {
+    color: '#E65100',
+    fontSize: 13,
+    flex: 1,
+  },
+  withdrawButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    height: 56,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#00C9A7',
+    marginTop: 8,
+  },
+  withdrawButtonText: { color: '#00C9A7', fontWeight: '700', fontSize: 16 },
+  noteContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 4,
+  },
+  noteText: {
+    color: '#6B7280',
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 18,
+  },
 });
 
 export default AddBalanceScreen;

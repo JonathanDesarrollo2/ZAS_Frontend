@@ -1,12 +1,12 @@
-// app/driver/find-trips.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Animated, Alert
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { apiClient } from '../../apis/Client';
-import { getSocket } from '../socket/socketClient';   // ajusta la ruta si es diferente
+import { getSocket } from '../socket/socketClient';
 
 interface Trip {
   id: string;
@@ -24,17 +24,16 @@ interface Trip {
 const FindTripsScreen = () => {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const fetchTrips = useCallback(async () => {
+    if (!currentCoords) return;
     setLoading(true);
     try {
-      // ---------- COORDENADAS FIJAS PARA PRUEBA (luego cambia por GPS real) ----------
-      const lat = 10.071866;
-      const lng = -66.869583;
+      const { lat, lng } = currentCoords;
       const radius = 5;
       const endpoint = `/private/trips/available?lat=${lat}&lng=${lng}&radius=${radius}`;
-      
       const response = await apiClient<{ result: boolean; content: Trip[] }>(endpoint);
       if (response.result) {
         setTrips(response.content);
@@ -46,27 +45,40 @@ const FindTripsScreen = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentCoords]);
 
-  // ---------- Escuchar nuevos viajes por Socket.io ----------
+  // Escuchar nuevos viajes
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
-
-    const handleNewTrip = () => {
-      fetchTrips();   // recargar la lista automáticamente
-    };
-
+    const handleNewTrip = () => fetchTrips();
     socket.on('newTripAvailable', handleNewTrip);
-
-    return () => {
-      socket.off('newTripAvailable', handleNewTrip);
-    };
+    return () => { socket.off('newTripAvailable', handleNewTrip); };
   }, [fetchTrips]);
+
+  // Obtener ubicación actual
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso de ubicación', 'Se necesita acceso a tu ubicación para buscar viajes.');
+        setLoading(false);
+        return;
+      }
+      const location = await Location.getCurrentPositionAsync({});
+      setCurrentCoords({ lat: location.coords.latitude, lng: location.coords.longitude });
+    })();
+  }, []);
+
+  // Cargar viajes cuando ya tengamos coordenadas
+  useEffect(() => {
+    if (currentCoords) {
+      fetchTrips();
+    }
+  }, [currentCoords, fetchTrips]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    fetchTrips();
   }, []);
 
   const renderTrip = ({ item }: { item: Trip }) => (
@@ -95,10 +107,11 @@ const FindTripsScreen = () => {
     </TouchableOpacity>
   );
 
-  if (loading) {
+  if (loading || !currentCoords) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#00C9A7" />
+        <Text style={{ marginTop: 10, color: '#6B7280' }}>Obteniendo ubicación...</Text>
       </View>
     );
   }
@@ -125,6 +138,7 @@ const FindTripsScreen = () => {
   );
 };
 
+// Estilos sin cambios
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   container: { flex: 1, paddingTop: 60 },

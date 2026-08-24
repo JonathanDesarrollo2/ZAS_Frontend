@@ -52,8 +52,10 @@ export const getActiveUser = async (): Promise<{
   userStatus: boolean;
   nivel: number;
   balance?: number;
-  isEmailVerified?: boolean;   // nuevo
-  isKYCVerified?: boolean;     // nuevo
+  isEmailVerified?: boolean;
+  isKYCVerified?: boolean;
+  profile_pic_url?: string | null;
+  profile_pic_updated_at?: Date | string | null;   // ← nuevo
 }> => {
   const data = await apiClient<{ result: boolean; content: any }>('/private/user/onsession');
   return data.content;
@@ -67,5 +69,25 @@ export const confirmEmailVerificationCode = async (code: string): Promise<AuthRe
   return apiClient<AuthResponse>('/private/email-verification/confirm-code', {
     method: 'POST',
     body: JSON.stringify({ code }),
+  });
+};
+
+// ---------- NUEVAS FUNCIONES PARA RECUPERACIÓN DE CONTRASEÑA ----------
+
+export const requestPasswordResetCode = async (usermail: string): Promise<AuthResponse> => {
+  return apiClient<AuthResponse>('/public/password-reset/send-code', {
+    method: 'POST',
+    body: JSON.stringify({ usermail }),
+  });
+};
+
+export const resetPasswordWithCode = async (
+  usermail: string,
+  code: string,
+  newPassword: string
+): Promise<AuthResponse> => {
+  return apiClient<AuthResponse>('/public/password-reset/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ usermail, code, newPassword }),
   });
 };
