@@ -132,6 +132,8 @@ export default function RootLayout() {
         <Stack.Screen name="merchant/products" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="merchant/product-edit" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="merchant/orders" options={{ animation: 'slide_from_right' }} />
+
+        <Stack.Screen name="history" options={{ animation: 'slide_from_right' }} />
       </Stack>
     </ThemeProvider>
   );

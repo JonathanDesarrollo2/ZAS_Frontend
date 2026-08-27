@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useAuth } from '../../presentation/store/AuthStore';   // importamos useAuth
+import { useAuth } from '../../presentation/store/AuthStore';
 
 // ---------- Toast ----------
 const Toast = ({ message, type = 'error', visible, onHide }: { message: string; type?: 'error' | 'success'; visible: boolean; onHide: () => void }) => {
@@ -43,8 +43,8 @@ const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { login } = useAuth();                      // función de login del store
-  const [isLoading, setIsLoading] = useState(false);  // estado local para el botón
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -125,9 +125,21 @@ const LoginScreen = () => {
             <Text style={styles.linkText}>¿No tienes cuenta? <Text style={{ color: '#00C9A7', fontWeight: '600' }}>Regístrate</Text></Text>
           </TouchableOpacity>
 
-          {/* NUEVO: enlace para recuperar contraseña */}
           <TouchableOpacity onPress={() => router.push('/auth/forgot-password')} style={{ marginTop: 16 }}>
             <Text style={styles.linkText}>¿Olvidaste tu contraseña?</Text>
+          </TouchableOpacity>
+
+          {/* 🔹 Enlace de afiliación, colocado después de los enlaces principales */}
+          <TouchableOpacity
+            onPress={() => router.push('/merchant/merchant-application' as any)}
+            style={{ marginTop: 24 }}
+          >
+            <Text style={styles.affiliateLink}>
+              ¿Quieres vender en ZAS?{' '}
+              <Text style={{ color: '#00C9A7', fontWeight: '700' }}>
+                Afíliate como comercio
+              </Text>
+            </Text>
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -157,6 +169,11 @@ const styles = StyleSheet.create({
   },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   linkText: { textAlign: 'center', color: '#6b7280', fontSize: 14 },
+  affiliateLink: {
+    textAlign: 'center',
+    color: '#6B7280',
+    fontSize: 14,
+  },
   toast: {
     position: 'absolute', top: 60, left: 20, right: 20,
     borderRadius: 20, padding: 18, zIndex: 1000,

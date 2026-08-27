@@ -120,7 +120,7 @@ const DashboardPassengerScreen = () => {
   }, []);
 
   const handleKYCRequired = () => {
-    showToast('KYC requerido: Debes verificar tu identidad primero.');
+    showToast('Verificacion requerido: Debes verificar tu identidad primero.');
   };
 
   const passengerModules = (
@@ -190,7 +190,7 @@ const DashboardPassengerScreen = () => {
             {!isKYC && (
               <View style={styles.compactWarning}>
                 <Feather name="alert-triangle" size={16} color="#FF9800" />
-                <Text style={styles.compactWarningText}>KYC pendiente</Text>
+                <Text style={styles.compactWarningText}>Verificacion de identidad pendiente</Text>
                 <TouchableOpacity onPress={() => router.push('/auth/kyc')}>
                   <Text style={styles.compactLink}>Verificar</Text>
                 </TouchableOpacity>

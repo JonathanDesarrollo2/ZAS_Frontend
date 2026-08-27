@@ -4,17 +4,15 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Switch
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';              // 👈 import añadido
+import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { getToken, apiClient } from '../../apis/Client';
 
-// URL base del backend (debe coincidir con la variable de entorno EXPO_PUBLIC_API_URL)
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080/api';
 
 type FileSelection = DocumentPicker.DocumentPickerResult | ImagePicker.ImagePickerResult | null;
 
-// Helper para obtener el nombre del archivo sin importar el tipo exacto
 function getSelectedFileName(file: FileSelection): string {
   if (!file || file.canceled || !file.assets?.length) return '';
   const asset = file.assets[0] as any;
@@ -38,7 +36,7 @@ const DriverDocumentationScreen = () => {
   const [form, setForm] = useState({
     marca_modelo: '', año: '', color: '', placa: '', cilindrada: '',
   });
-  const [hasAntecedentes, setHasAntecedentes] = useState(true); // toggle antecedentes
+  const [hasAntecedentes, setHasAntecedentes] = useState(true);
 
   const [files, setFiles] = useState<Record<string, FileSelection>>({
     cedula: null,
@@ -48,9 +46,10 @@ const DriverDocumentationScreen = () => {
     carnet_circulacion: null,
     traspaso_notariado: null,
     poliza_rcv: null,
-    vehicle_photo_1: null,
-    vehicle_photo_2: null,
-    vehicle_photo_3: null,
+    // Nombres correctos para backend
+    foto_vehiculo_1: null,
+    foto_vehiculo_2: null,
+    foto_vehiculo_3: null,
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -113,21 +112,17 @@ const DriverDocumentationScreen = () => {
   };
 
   const handleSubmit = async () => {
-    // Ahora cedula, licencia, certificado_medico son opcionales
-    // antecedentes_penales solo se requiere si el toggle está activo
     if (hasAntecedentes && !files.antecedentes_penales) {
       Alert.alert('Archivo requerido', 'Adjunta el certificado de antecedentes penales o marca que no tienes.');
       return;
     }
 
-    // Validar datos de la moto
     if (!form.marca_modelo || !form.año || !form.color || !form.placa || !form.cilindrada) {
       Alert.alert('Campos requeridos', 'Completa todos los campos de la moto');
       return;
     }
 
-    // Validar al menos 2 fotos del vehículo
-    const vehiclePhotos = [files.vehicle_photo_1, files.vehicle_photo_2, files.vehicle_photo_3].filter(Boolean);
+    const vehiclePhotos = [files.foto_vehiculo_1, files.foto_vehiculo_2, files.foto_vehiculo_3].filter(Boolean);
     if (vehiclePhotos.length < 2) {
       Alert.alert('Fotos requeridas', 'Debes subir al menos 2 fotos del vehículo desde diferentes ángulos.');
       return;
@@ -138,18 +133,28 @@ const DriverDocumentationScreen = () => {
       const token = await getToken();
       const formData = new FormData();
 
-      // Adjuntar archivos que existan
+      // Adjuntar archivos con nombres correctos
       for (const [field, fileSelection] of Object.entries(files)) {
         if (!fileSelection || fileSelection.canceled || !fileSelection.assets?.length) continue;
         const uri = getSelectedFileUri(fileSelection)!;
         const type = getSelectedFileType(fileSelection);
         const name = getSelectedFileName(fileSelection) || `${field}.jpg`;
-        formData.append(`${field}_file`, { uri, type, name } as any);
+
+        let backendFieldName = field;
+        if (
+          ['cedula', 'licencia', 'certificado_medico', 'antecedentes_penales', 'carnet_circulacion', 'traspaso_notariado', 'poliza_rcv'].includes(field)
+        ) {
+          backendFieldName = `${field}_file`;
+        } else if (['foto_vehiculo_1', 'foto_vehiculo_2', 'foto_vehiculo_3'].includes(field)) {
+          backendFieldName = field; // sin sufijo
+        }
+
+        formData.append(backendFieldName, { uri, type, name } as any);
       }
 
       // Adjuntar campos de texto
       formData.append('marca_modelo', form.marca_modelo);
-      formData.append('año', form.año);
+      formData.append('anio', form.año);
       formData.append('color', form.color);
       formData.append('placa', form.placa);
       formData.append('cilindrada', form.cilindrada);
@@ -221,13 +226,11 @@ const DriverDocumentationScreen = () => {
 
         {canEdit && (
           <View style={styles.formSection}>
-            {/* Documentos personales (ahora opcionales) */}
             <Text style={styles.sectionTitle}>Tus documentos</Text>
             <FileField label="Cédula de identidad (opcional)" field="cedula" file={files.cedula} onPick={() => pickFile('cedula')} optional />
             <FileField label="Licencia de conducir (opcional)" field="licencia" file={files.licencia} onPick={() => pickFile('licencia')} optional />
             <FileField label="Certificado médico vial (opcional)" field="certificado_medico" file={files.certificado_medico} onPick={() => pickFile('certificado_medico')} optional />
 
-            {/* Toggle de antecedentes */}
             <View style={styles.toggleRow}>
               <Text style={styles.toggleLabel}>¿Tienes antecedentes penales?</Text>
               <Switch
@@ -241,7 +244,6 @@ const DriverDocumentationScreen = () => {
               <FileField label="Antecedentes penales" field="antecedentes_penales" file={files.antecedentes_penales} onPick={() => pickFile('antecedentes_penales')} />
             )}
 
-            {/* Datos de la moto */}
             <Text style={styles.sectionTitle}>Datos de la moto</Text>
             <TextInputField label="Marca y modelo" value={form.marca_modelo} onChange={(v: string) => setForm({ ...form, marca_modelo: v })} />
             <TextInputField label="Año" value={form.año} onChange={(v: string) => setForm({ ...form, año: v })} keyboardType="numeric" />
@@ -249,17 +251,15 @@ const DriverDocumentationScreen = () => {
             <TextInputField label="Placa" value={form.placa} onChange={(v: string) => setForm({ ...form, placa: v })} />
             <TextInputField label="Cilindrada (cc)" value={form.cilindrada} onChange={(v: string) => setForm({ ...form, cilindrada: v })} keyboardType="numeric" />
 
-            {/* Documentos del vehículo */}
             <Text style={styles.sectionTitle}>Documentos del vehículo</Text>
             <FileField label="Carnet de circulación" field="carnet_circulacion" file={files.carnet_circulacion} onPick={() => pickFile('carnet_circulacion')} />
             <FileField label="Traspaso notariado (si aplica)" field="traspaso_notariado" file={files.traspaso_notariado} onPick={() => pickFile('traspaso_notariado')} optional />
             <FileField label="Póliza de RCV" field="poliza_rcv" file={files.poliza_rcv} onPick={() => pickFile('poliza_rcv')} />
 
-            {/* Fotos del vehículo */}
             <Text style={styles.sectionTitle}>Fotos del vehículo (mínimo 2)</Text>
-            <FileField label="Foto 1 (frente)" field="vehicle_photo_1" file={files.vehicle_photo_1} onPick={() => pickImage('vehicle_photo_1')} />
-            <FileField label="Foto 2 (lateral)" field="vehicle_photo_2" file={files.vehicle_photo_2} onPick={() => pickImage('vehicle_photo_2')} />
-            <FileField label="Foto 3 (trasera)" field="vehicle_photo_3" file={files.vehicle_photo_3} onPick={() => pickImage('vehicle_photo_3')} optional />
+            <FileField label="Foto 1 (frente)" field="foto_vehiculo_1" file={files.foto_vehiculo_1} onPick={() => pickImage('foto_vehiculo_1')} />
+            <FileField label="Foto 2 (lateral)" field="foto_vehiculo_2" file={files.foto_vehiculo_2} onPick={() => pickImage('foto_vehiculo_2')} />
+            <FileField label="Foto 3 (trasera)" field="foto_vehiculo_3" file={files.foto_vehiculo_3} onPick={() => pickImage('foto_vehiculo_3')} optional />
 
             <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={submitting}>
               {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Enviar documentación</Text>}
@@ -275,7 +275,7 @@ const DriverDocumentationScreen = () => {
   );
 };
 
-// Componente para archivos adjuntos
+// Componentes FileField y TextInputField sin cambios
 const FileField = ({ label, field, file, onPick, optional }: {
   label: string;
   field: string;
@@ -297,7 +297,6 @@ const FileField = ({ label, field, file, onPick, optional }: {
   );
 };
 
-// Componente para campos de texto
 const TextInputField = ({ label, value, onChange, keyboardType = 'default' }: {
   label: string;
   value: string;

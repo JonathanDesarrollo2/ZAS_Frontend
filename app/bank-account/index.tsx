@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, Animated, ScrollView, Image,
-  ActivityIndicator, StyleSheet, TextInput
+  ActivityIndicator, StyleSheet, TextInput, Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { apiClient } from '../../apis/Client';
 
 const BANKS = [
@@ -71,12 +72,15 @@ const BankAccountScreen = () => {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [showBankPicker, setShowBankPicker] = useState(false);
+  const [hasAccount, setHasAccount] = useState(false); // indica si ya hay datos guardados
 
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [toastType, setToastType] = useState<'error' | 'success'>('error');
   const showToast = useCallback((msg: string, type: 'error' | 'success' = 'error') => {
-    setToastMsg(msg); setToastType(type); setToastVisible(true);
+    setToastMsg(msg);
+    setToastType(type);
+    setToastVisible(true);
   }, []);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -92,6 +96,9 @@ const BankAccountScreen = () => {
         setBankCode(data.content.bankName || '');
         setCedula(data.content.cedula || '');
         setPhone(data.content.phone || '');
+        setHasAccount(true);
+      } else {
+        setHasAccount(false);
       }
     } catch (err: any) {
       showToast(err.message);
@@ -111,12 +118,42 @@ const BankAccountScreen = () => {
         method: 'POST',
         body: JSON.stringify({ bankName: bankCode, cedula, phone }),
       });
-      showToast('Cuenta bancaria guardada', 'success');
+      showToast('Datos guardados correctamente', 'success');
+      setHasAccount(true); // Cambiar a modo solo lectura
     } catch (err: any) {
       showToast(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDelete = async () => {
+    Alert.alert(
+      'Eliminar datos',
+      '¿Seguro que deseas eliminar tus datos de pago móvil?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await apiClient('/private/bank-account', { method: 'DELETE' });
+              showToast('Datos eliminados', 'success');
+              setHasAccount(false);
+              setBankCode('');
+              setCedula('');
+              setPhone('');
+            } catch (err: any) {
+              showToast(err.message);
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const selectedBank = BANKS.find(b => b.code === bankCode);
@@ -129,68 +166,108 @@ const BankAccountScreen = () => {
         <Animated.View style={{ opacity: fadeAnim }}>
           <View style={styles.logoRow}>
             <Image source={require('../../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
-            <Text style={styles.title}>Cuenta Bancaria</Text>
+            <Text style={styles.title}>Datos de pago móvil</Text>
             <Text style={styles.subtitle}>Datos para recibir tus pagos</Text>
           </View>
 
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.inputRow}
-              onPress={() => setShowBankPicker(true)}
-              activeOpacity={0.7}
-            >
-              <Feather name="credit-card" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
-              <Text style={[styles.input, !bankCode && { color: '#9CA3AF' }]}>{bankLabel}</Text>
-              <Feather name="chevron-down" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-
-            {showBankPicker && (
-              <View style={styles.pickerContainer}>
-                {BANKS.map(bank => (
-                  <TouchableOpacity
-                    key={bank.code}
-                    style={[styles.pickerItem, bankCode === bank.code && styles.pickerItemSelected]}
-                    onPress={() => { setBankCode(bank.code); setShowBankPicker(false); }}
-                  >
-                    <Text style={[styles.pickerItemText, bankCode === bank.code && styles.pickerItemTextSelected]}>
-                      {bank.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+          {fetching ? (
+            <ActivityIndicator size="large" color="#00C9A7" style={{ marginTop: 30 }} />
+          ) : hasAccount ? (
+            <View style={styles.card}>
+              <View style={styles.savedDataRow}>
+                <Feather name="credit-card" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
+                <Text style={styles.savedDataText}>{bankLabel}</Text>
               </View>
-            )}
-
-            <View style={styles.inputRow}>
-              <Feather name="user" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
-              <TextInput
-                style={styles.input}
-                placeholder="Cédula del titular"
-                value={cedula}
-                onChangeText={setCedula}
-                placeholderTextColor="#9ca3af"
-              />
+              <View style={styles.savedDataRow}>
+                <Feather name="user" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
+                <Text style={styles.savedDataText}>{cedula}</Text>
+              </View>
+              <View style={styles.savedDataRow}>
+                <Feather name="phone" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
+                <Text style={styles.savedDataText}>{phone}</Text>
+              </View>
             </View>
+          ) : (
+            <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.inputRow}
+                onPress={() => setShowBankPicker(true)}
+                activeOpacity={0.7}
+              >
+                <Feather name="credit-card" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
+                <Text style={[styles.input, !bankCode && { color: '#9CA3AF' }]}>{bankLabel}</Text>
+                <Feather name="chevron-down" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
 
-            <View style={styles.inputRow}>
-              <Feather name="phone" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
-              <TextInput
-                style={styles.input}
-                placeholder="Teléfono"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-                placeholderTextColor="#9ca3af"
-              />
+              {showBankPicker && (
+                <View style={styles.pickerContainer}>
+                  {BANKS.map(bank => (
+                    <TouchableOpacity
+                      key={bank.code}
+                      style={[styles.pickerItem, bankCode === bank.code && styles.pickerItemSelected]}
+                      onPress={() => { setBankCode(bank.code); setShowBankPicker(false); }}
+                    >
+                      <Text style={[styles.pickerItemText, bankCode === bank.code && styles.pickerItemTextSelected]}>
+                        {bank.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.inputRow}>
+                <Feather name="user" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Cédula del titular"
+                  value={cedula}
+                  onChangeText={setCedula}
+                  placeholderTextColor="#9ca3af"
+                />
+              </View>
+
+              <View style={styles.inputRow}>
+                <Feather name="phone" size={20} color="#00C9A7" style={{ marginRight: 12 }} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Teléfono"
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                  placeholderTextColor="#9ca3af"
+                />
+              </View>
             </View>
-          </View>
+          )}
 
+          {/* Botones de acción */}
+          {!hasAccount ? (
+            <TouchableOpacity
+              style={[styles.button, loading && { opacity: 0.7 }]}
+              onPress={handleSave}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Guardar</Text>}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.button, styles.deleteButton]}
+              onPress={handleDelete}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Eliminar datos</Text>}
+            </TouchableOpacity>
+          )}
+
+          {/* Botón para volver al dashboard */}
           <TouchableOpacity
-            style={[styles.button, (loading || fetching) && { opacity: 0.7 }]}
-            onPress={handleSave}
-            disabled={loading || fetching}
-            activeOpacity={0.8}
+            style={styles.backButton}
+            onPress={() => router.replace('/dashboard')}
           >
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Guardar</Text>}
+            <Feather name="arrow-left" size={18} color="#00C9A7" style={{ marginRight: 6 }} />
+            <Text style={styles.backButtonText}>Volver al inicio</Text>
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -221,8 +298,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     shadowColor: '#00C9A7', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 5,
+    marginBottom: 12,
+  },
+  deleteButton: {
+    backgroundColor: '#FF5252',
   },
   buttonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  backButtonText: {
+    color: '#00C9A7',
+    fontWeight: '600',
+    fontSize: 16,
+  },
   pickerContainer: {
     backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB',
     marginBottom: 14, overflow: 'hidden',
@@ -231,6 +323,16 @@ const styles = StyleSheet.create({
   pickerItemSelected: { backgroundColor: '#E6FFFA' },
   pickerItemText: { fontSize: 15, color: '#1F2937' },
   pickerItemTextSelected: { color: '#00C9A7', fontWeight: '600' },
+  savedDataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  savedDataText: {
+    fontSize: 16,
+    color: '#111827',
+    flex: 1,
+  },
   toast: {
     position: 'absolute', top: 60, left: 20, right: 20, borderRadius: 20,
     padding: 18, zIndex: 1000, shadowColor: '#000', shadowOffset: { width: 0, height: 8 },

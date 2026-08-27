@@ -8,6 +8,10 @@
 // Así evitamos el error "expo-notifications was removed from Expo Go"
 
 // ========== BLOQUE DE PRODUCCIÓN (descomentar para build) ==========
+
+
+
+/*
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
@@ -58,11 +62,11 @@ export async function getFCMToken(): Promise<string | null> {
 
   return tokenResult.data;
 }
-
+*/
 // ========== BLOQUE TEMPORAL PARA EXPO GO ==========
 // Devuelve un token falso para que el resto de la app no falle.
 // Cuando compiles para producción, comenta este export y descomenta el bloque de arriba.
 
-//export async function getFCMToken(): Promise<string | null> {
-////  return 'ExpoGoFakeToken';
-//}
+export async function getFCMToken(): Promise<string | null> {
+  return 'ExpoGoFakeToken';
+}

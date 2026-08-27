@@ -1,18 +1,20 @@
+// app/request-ride.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, Animated, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, ActivityIndicator, TextInput, Modal, FlatList,
+  Alert,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { createTrip, estimatePrice } from '../apis/trips';
+import { createTrip, estimatePrice, getActiveTrip } from '../apis/trips';
 import { useAutocomplete } from '../presentation/hooks/use-autocomplete';
 import { reverseGeocode } from '../utils/geocoding';
 import MapSelector from '../presentation/components/shared/mapSelector';
 import { useAuth } from '../presentation/store/AuthStore';
 
-// ---------- Toast (sin cambios) ----------
+// ---------- Toast ----------
 const Toast = ({ message, type = 'error', visible, onHide }: { message: string; type?: 'error' | 'success'; visible: boolean; onHide: () => void }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-80)).current;
@@ -78,21 +80,17 @@ const SuggestionsModal = ({
 const RequestRideScreen = () => {
   const { user } = useAuth();
 
-  // Ubicación actual
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationLoaded, setLocationLoaded] = useState(false);
 
-  // Hooks de autocompletado
   const originAuto = useAutocomplete(currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined);
   const destAuto = useAutocomplete(currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined);
 
-  // Campos de dirección y coordenadas
   const [origin, setOrigin] = useState('');
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destination, setDestination] = useState('');
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Vehículo, precio y método de pago
   const [selectedVehicle, setSelectedVehicle] = useState('moto');
   const [loading, setLoading] = useState(false);
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
@@ -100,15 +98,12 @@ const RequestRideScreen = () => {
   const [isCustomPrice, setIsCustomPrice] = useState(false);
   const [customPrice, setCustomPrice] = useState('');
 
-  // Mapa modal
   const [mapSelectorVisible, setMapSelectorVisible] = useState(false);
   const [mapTargetField, setMapTargetField] = useState<'origin' | 'dest'>('dest');
 
-  // Modal de sugerencias
   const [suggestionsModalVisible, setSuggestionsModalVisible] = useState(false);
   const [activeSuggestionField, setActiveSuggestionField] = useState<'origin' | 'dest'>('dest');
 
-  // Toast
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [toastType, setToastType] = useState<'error' | 'success'>('error');
@@ -119,7 +114,6 @@ const RequestRideScreen = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => { Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start(); }, []);
 
-  // Obtener ubicación actual al inicio
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -134,7 +128,6 @@ const RequestRideScreen = () => {
     })();
   }, []);
 
-  // Manejar selección de sugerencia
   const handleOriginSelect = async (placeId: string) => {
     const coords = await originAuto.selectSuggestion(placeId);
     if (coords) {
@@ -155,13 +148,11 @@ const RequestRideScreen = () => {
     }
   };
 
-  // Abrir modal de sugerencias
   const openSuggestions = (field: 'origin' | 'dest') => {
     setActiveSuggestionField(field);
     setSuggestionsModalVisible(true);
   };
 
-  // Abrir mapa
   const openMapForField = (field: 'origin' | 'dest') => {
     setMapTargetField(field);
     setMapSelectorVisible(true);
@@ -186,7 +177,6 @@ const RequestRideScreen = () => {
     setMapSelectorVisible(false);
   };
 
-  // Estimar precio
   useEffect(() => {
     if (destCoords && currentLocation) {
       estimatePrice(currentLocation.latitude, currentLocation.longitude, destCoords.lat, destCoords.lng)
@@ -202,6 +192,28 @@ const RequestRideScreen = () => {
     if (!destCoords) { showToast('Selecciona un destino válido'); return; }
     if (selectedVehicle !== 'moto') { showToast('Solo moto disponible'); return; }
     if (paymentMethod === 'app' && !canPayWithApp) { showToast('Saldo insuficiente'); return; }
+
+    // ✅ Verificar si ya hay un viaje activo antes de crear otro
+    try {
+      const activeRes = await getActiveTrip();
+      if (activeRes.result && activeRes.content) {
+        Alert.alert('Viaje en curso', 'Ya tienes un viaje activo. Continúa con él.');
+        const activeTrip = activeRes.content;
+        router.replace({
+          pathname: '/trip-active',
+          params: {
+            tripId: activeTrip.id,
+            driverId: activeTrip.driver_id,
+            driverName: activeTrip.driver?.username || activeTrip.driver?.userlogin || 'Conductor',
+            vehicle: activeTrip.vehicle_type || 'Moto',
+          },
+        });
+        return;
+      }
+    } catch (err) {
+      // Silencioso, continuar con la creación
+    }
+
     setLoading(true);
     try {
       const payload = {
@@ -236,7 +248,6 @@ const RequestRideScreen = () => {
     );
   }
 
-  // Obtener las sugerencias activas
   const activeSuggestions = activeSuggestionField === 'origin' ? originAuto.suggestions : destAuto.suggestions;
 
   return (
@@ -245,7 +256,7 @@ const RequestRideScreen = () => {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <Animated.View style={{ opacity: fadeAnim }}>
-            {/* ---------- Origen ---------- */}
+            {/* Origen */}
             <View style={styles.fieldContainer}>
               <Feather name="circle" size={14} color="#00C9A7" style={{ marginRight: 8 }} />
               <TextInput
@@ -266,7 +277,7 @@ const RequestRideScreen = () => {
               </TouchableOpacity>
             </View>
 
-            {/* ---------- Destino ---------- */}
+            {/* Destino */}
             <View style={styles.fieldContainer}>
               <Feather name="map-pin" size={14} color="#FF6B6B" style={{ marginRight: 8 }} />
               <TextInput
@@ -287,7 +298,7 @@ const RequestRideScreen = () => {
               </TouchableOpacity>
             </View>
 
-            {/* ---------- Vehículo ---------- */}
+            {/* Vehículo */}
             <Text style={styles.sectionTitle}>Vehículo</Text>
             <View style={styles.vehicleRow}>
               <TouchableOpacity
@@ -303,7 +314,7 @@ const RequestRideScreen = () => {
               </TouchableOpacity>
             </View>
 
-            {/* ---------- Precio ---------- */}
+            {/* Precio */}
             <View style={styles.priceRow}>
               <Feather name="dollar-sign" size={18} color="#374151" style={{ marginRight: 6 }} />
               {estimatedPrice !== null ? (
@@ -338,7 +349,7 @@ const RequestRideScreen = () => {
               </View>
             )}
 
-            {/* ---------- Saldo ---------- */}
+            {/* Saldo */}
             <View style={styles.balanceRow}>
               <Feather name="dollar-sign" size={18} color="#00C9A7" style={{ marginRight: 8 }} />
               <Text style={styles.balanceText}>
@@ -346,7 +357,7 @@ const RequestRideScreen = () => {
               </Text>
             </View>
 
-            {/* ---------- Método de pago ---------- */}
+            {/* Método de pago */}
             <Text style={styles.sectionTitle}>Método de pago</Text>
             <View style={styles.paymentRow}>
               <TouchableOpacity
@@ -368,7 +379,7 @@ const RequestRideScreen = () => {
               <Text style={styles.errorText}>Saldo insuficiente para pagar con la app</Text>
             )}
 
-            {/* ---------- Botón solicitar ---------- */}
+            {/* Botón solicitar */}
             <TouchableOpacity
               style={[styles.requestBtn, loading && { opacity: 0.7 }]}
               onPress={handleRequestRide}
@@ -386,7 +397,7 @@ const RequestRideScreen = () => {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ---------- Modal de sugerencias ---------- */}
+      {/* Modal sugerencias */}
       <SuggestionsModal
         visible={suggestionsModalVisible && activeSuggestions.length > 0}
         suggestions={activeSuggestions}
@@ -394,7 +405,7 @@ const RequestRideScreen = () => {
         onClose={() => setSuggestionsModalVisible(false)}
       />
 
-      {/* ---------- Modal del mapa ---------- */}
+      {/* Modal mapa */}
       <MapSelector
         visible={mapSelectorVisible}
         initialCoords={getMapInitialCoords()}
@@ -405,7 +416,6 @@ const RequestRideScreen = () => {
   );
 };
 
-// ---------- Estilos ----------
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   centered: { justifyContent: 'center', alignItems: 'center' },
@@ -418,12 +428,11 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
   },
   fieldInput: { flex: 1, fontSize: 16, color: '#111827', marginLeft: 8 },
-  // Modal de sugerencias
   suggestionsModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'flex-start',
-    paddingTop: 140, // para que quede debajo de los campos (ajusta según tu diseño)
+    paddingTop: 140,
     paddingHorizontal: 20,
   },
   suggestionsModalContainer: {

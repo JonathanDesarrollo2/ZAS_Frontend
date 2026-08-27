@@ -18,7 +18,8 @@ const BANK_INFO = {
 
 const AddBalanceScreen = () => {
   const { user } = useAuth();
-  const [amount, setAmount] = useState('');
+  // Cambiamos amount por amountVES: monto en bolívares
+  const [amountVES, setAmountVES] = useState('');
   const [reference, setReference] = useState('');
   const [dolarRate, setDolarRate] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
@@ -29,7 +30,7 @@ const AddBalanceScreen = () => {
 
   const currentBalance = Number(user?.balance) || 0;
   const isDriver = user?.nivel === 2;
-  const parsedAmount = parseFloat(amount);
+  const parsedVES = parseFloat(amountVES);
 
   // Obtener tasa desde el backend (cacheada)
   useEffect(() => {
@@ -87,8 +88,8 @@ const AddBalanceScreen = () => {
   const handleSubmit = async () => {
     if (!hasBankAccount) {
       Alert.alert(
-        'Cuenta bancaria requerida',
-        'Debes registrar tu cuenta bancaria antes de realizar operaciones de saldo.',
+        'Datos de pago móvil requeridos',
+        'Debes registrar tus datos de pago móvil antes de realizar operaciones de saldo.',
         [
           { text: 'Cancelar' },
           { text: 'Registrar ahora', onPress: () => router.push('/bank-account') }
@@ -97,18 +98,32 @@ const AddBalanceScreen = () => {
       return;
     }
 
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert('Monto inválido', 'Ingresa un monto mayor a $0.00');
+    if (!dolarRate) {
+      Alert.alert('Tasa no disponible', 'Espera un momento mientras cargamos la tasa de cambio.');
       return;
     }
+
+    if (isNaN(parsedVES) || parsedVES <= 0) {
+      Alert.alert('Monto inválido', 'Ingresa un monto en bolívares mayor a 0');
+      return;
+    }
+
     if (!reference.trim()) {
       Alert.alert('Referencia requerida', 'Ingresa el número de referencia de la transferencia');
       return;
     }
 
+    const usdEquivalent = parsedVES / dolarRate;
+    const usdAmount = Math.round(usdEquivalent * 100) / 100; // redondear a 2 decimales
+
+    if (usdAmount <= 0) {
+      Alert.alert('Monto bajo', 'El monto en bolívares es demasiado bajo para generar una recarga.');
+      return;
+    }
+
     setSending(true);
     try {
-      await requestTopup(parsedAmount, reference.trim());
+      await requestTopup(usdAmount, reference.trim());
       Alert.alert('Solicitud enviada', 'Tu recarga queda pendiente de verificación.');
       router.back();
     } catch (err: any) {
@@ -123,8 +138,8 @@ const AddBalanceScreen = () => {
 
     if (!hasBankAccount) {
       Alert.alert(
-        'Cuenta bancaria requerida',
-        'Debes registrar tu cuenta bancaria antes de solicitar un retiro.',
+        'Datos de pago móvil requeridos',
+        'Debes registrar tus datos de pago móvil antes de solicitar un retiro.',
         [
           { text: 'Cancelar' },
           { text: 'Registrar ahora', onPress: () => router.push('/bank-account') }
@@ -142,7 +157,6 @@ const AddBalanceScreen = () => {
       return;
     }
 
-    // Validar saldo positivo
     if (currentBalance <= 0) {
       Alert.alert('Sin saldo', 'No tienes saldo disponible para retirar.');
       return;
@@ -150,14 +164,12 @@ const AddBalanceScreen = () => {
 
     setWithdrawing(true);
     try {
-      // Se envía SIEMPRE el saldo completo
       const res = await apiClient<{ result: boolean; content: any; error?: string[] }>('/private/withdrawals', {
         method: 'POST',
         body: JSON.stringify({ amount: currentBalance }),
       });
       if (res.result) {
         Alert.alert('Solicitud enviada', `Has solicitado retirar $${currentBalance.toFixed(2)}. Queda pendiente de aprobación.`);
-        // Actualizar info
         const infoRes = await apiClient<{ result: boolean; content: any; error?: string[] }>('/private/withdrawals/info');
         if (infoRes.result) setWithdrawInfo(infoRes.content);
       } else {
@@ -171,6 +183,7 @@ const AddBalanceScreen = () => {
   };
 
   const nextWithdrawalDate = withdrawInfo?.nextAllowedAt ? new Date(withdrawInfo.nextAllowedAt) : null;
+  const usdEquivalent = dolarRate && parsedVES > 0 ? parsedVES / dolarRate : 0;
 
   return (
     <KeyboardAvoidingView
@@ -182,7 +195,7 @@ const AddBalanceScreen = () => {
         <View style={styles.titleRow}>
           <Text style={styles.title}>Añadir saldo</Text>
           {dolarRate !== null && dolarRate > 0 && (
-            <Text style={styles.rateBadge}>BCV: {dolarRate.toFixed(2)}</Text>
+            <Text style={styles.rateBadge}>BCV: {dolarRate.toFixed(2)} Bs/USD</Text>
           )}
         </View>
 
@@ -200,7 +213,7 @@ const AddBalanceScreen = () => {
         {!hasBankAccount && !checkingBankAccount && (
           <TouchableOpacity style={styles.bankWarning} onPress={() => router.push('/bank-account')}>
             <Feather name="alert-circle" size={16} color="#FF9800" style={{ marginRight: 6 }} />
-            <Text style={styles.bankWarningText}>Registra tu cuenta bancaria para operar tu saldo</Text>
+            <Text style={styles.bankWarningText}>Registra tus datos de pago móvil para operar tu saldo</Text>
           </TouchableOpacity>
         )}
 
@@ -211,22 +224,31 @@ const AddBalanceScreen = () => {
           </View>
         )}
 
-        {/* Sección de recarga */}
-        <Text style={styles.label}>Monto a transferir (USD)</Text>
+        {/* Sección de recarga con monto en bolívares */}
+        <Text style={styles.label}>Monto transferido en bolívares</Text>
         <View style={styles.inputRow}>
           <Feather name="dollar-sign" size={18} color="#00C9A7" style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="Ej: 5.00"
+            placeholder="Ej: 1000"
             placeholderTextColor="#9CA3AF"
             keyboardType="decimal-pad"
-            value={amount}
-            onChangeText={setAmount}
+            value={amountVES}
+            onChangeText={setAmountVES}
           />
+          <Text style={styles.currencySuffix}>Bs</Text>
         </View>
 
-        {!isNaN(parsedAmount) && parsedAmount > 0 && dolarRate !== null && (
-          <Text style={styles.conversionText}>≈ {(parsedAmount * dolarRate).toFixed(2)} VES</Text>
+        {dolarRate && parsedVES > 0 ? (
+          <View style={styles.conversionBox}>
+            <Text style={styles.conversionText}>
+              Equivale a: <Text style={styles.conversionAmount}>${usdEquivalent.toFixed(2)}</Text>
+            </Text>
+          </View>
+        ) : (
+          !dolarRate && (
+            <Text style={styles.loadingRate}>Cargando tasa de cambio...</Text>
+          )
         )}
 
         <Text style={styles.label}>Número de referencia</Text>
@@ -265,13 +287,11 @@ const AddBalanceScreen = () => {
               <Text style={styles.withdrawTitle}>Retirar Dinero</Text>
             </View>
 
-            {/* Mostrar saldo disponible */}
             <View style={styles.withdrawBalanceBox}>
               <Text style={styles.withdrawBalanceLabel}>Saldo disponible para retirar:</Text>
               <Text style={styles.withdrawBalanceAmount}>${currentBalance.toFixed(2)}</Text>
             </View>
 
-            {/* Cooldown */}
             {withdrawInfo && !withdrawInfo.canWithdraw && nextWithdrawalDate && (
               <View style={styles.cooldownBox}>
                 <Feather name="clock" size={16} color="#FF9800" style={{ marginRight: 6 }} />
@@ -304,7 +324,6 @@ const AddBalanceScreen = () => {
           </View>
         )}
 
-        {/* Nota sobre demora */}
         <View style={styles.noteContainer}>
           <Feather name="clock" size={14} color="#6B7280" style={{ marginRight: 6 }} />
           <Text style={styles.noteText}>
@@ -389,7 +408,32 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   input: { flex: 1, fontSize: 16, color: '#111827' },
+  currencySuffix: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginLeft: 4,
+  },
+  conversionBox: {
+    backgroundColor: '#E6FFFA',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
   conversionText: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  conversionAmount: {
+    fontWeight: '700',
+    color: '#00C9A7',
+  },
+  loadingRate: {
+    textAlign: 'center',
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  conversionTextOld: {
     textAlign: 'center',
     color: '#6B7280',
     fontSize: 14,

@@ -24,7 +24,6 @@ const KYCScreen = () => {
       const result = await checkKYCStatus();
       setStatus(result);
       if (result === 'verified') {
-        // Actualizar la sesión para que el dashboard reciba isKYCVerified = true
         await checkSession();
         Alert.alert('Verificación exitosa', 'Tu identidad ha sido verificada. Ya puedes usar todas las funciones.', [
           { text: 'Ir al dashboard', onPress: () => router.replace('/dashboard') }
@@ -85,6 +84,22 @@ const KYCScreen = () => {
     );
   }
 
+  // Función para obtener texto legible del estado
+  const getStatusText = () => {
+    switch (status) {
+      case 'verified':
+        return 'Verificado ✅';
+      case 'processing':
+        return 'En proceso 🔄';
+      case 'pending':
+        return 'Pendiente';
+      case 'not_started':
+        return 'No iniciado';
+      default:
+        return status || 'No iniciado';
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <View style={styles.card}>
@@ -100,7 +115,7 @@ const KYCScreen = () => {
         <View style={styles.statusContainer}>
           <Feather name="info" size={18} color="#6B7280" />
           <Text style={styles.statusText}>
-            Estado: {status === 'verified' ? 'Verificado ✅' : status === 'processing' ? 'En proceso 🔄' : status || 'No iniciado'}
+            Estado: {getStatusText()}
           </Text>
         </View>
 
@@ -119,7 +134,6 @@ const KYCScreen = () => {
           </View>
         ) : (
           <>
-            {/* Botón principal */}
             {status === 'processing' ? (
               <TouchableOpacity
                 style={styles.primaryButton}
@@ -146,7 +160,6 @@ const KYCScreen = () => {
               </TouchableOpacity>
             )}
 
-            {/* Botones secundarios */}
             {status === 'processing' && (
               <TouchableOpacity
                 style={styles.secondaryButton}
@@ -163,7 +176,7 @@ const KYCScreen = () => {
               onPress={() => router.back()}
             >
               <Feather name="arrow-left" size={18} color="#00C9A7" style={{ marginRight: 8 }} />
-              <Text style={styles.secondaryButtonText}>Volver al dashboard</Text>
+              <Text style={styles.secondaryButtonText}>Volver al inicio</Text>
             </TouchableOpacity>
           </>
         )}

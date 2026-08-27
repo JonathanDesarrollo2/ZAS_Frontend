@@ -1,8 +1,10 @@
+// app/trip-active.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, Animated, StyleSheet,
-  TextInput, ActivityIndicator, ScrollView, Alert,
-  BackHandler, Image,
+  TextInput, ActivityIndicator, ScrollView, Alert, Image,
+  Modal, KeyboardAvoidingView, Platform, FlatList,
+  BackHandler,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -10,16 +12,40 @@ import { Feather } from '@expo/vector-icons';
 import { connectSocket, getSocket } from './socket/socketClient';
 import { apiClient } from '../apis/Client';
 import { confirmTripPayment } from '../apis/trips';
-import * as Location from 'expo-location';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
-// Toast (sin cambios)
+const BANKS = [
+  { code: '0102', name: 'Banco de Venezuela' },
+  { code: '0104', name: 'Venezolano de Crédito' },
+  { code: '0105', name: 'Mercantil' },
+  { code: '0108', name: 'Provincial' },
+  { code: '0114', name: 'Bancaribe' },
+  { code: '0115', name: 'Banco Exterior' },
+  { code: '0116', name: 'Banco Nacional de Crédito (BNC - Antiguo BOD)' },
+  { code: '0128', name: 'Banco Caroní' },
+  { code: '0134', name: 'Banesco' },
+  { code: '0137', name: 'Banco Sofitasa' },
+  { code: '0138', name: 'Banco Plaza' },
+  { code: '0146', name: 'Banco de la Gente Emprendedora (Bangente)' },
+  { code: '0151', name: 'BFC Banco Fondo Común' },
+  { code: '0156', name: '100% Banco' },
+  { code: '0157', name: 'Banco Del Sur (DelSur)' },
+  { code: '0163', name: 'Banco del Tesoro' },
+  { code: '0166', name: 'Banco Agrícola de Venezuela' },
+  { code: '0168', name: 'Bancrecer' },
+  { code: '0169', name: 'Mi Banco' },
+  { code: '0171', name: 'Banco Activo' },
+  { code: '0172', name: 'Bancamiga' },
+  { code: '0174', name: 'Banplus' },
+  { code: '0175', name: 'Banco Digital de los Trabajadores (BDT / Antiguo Bicentenario)' },
+  { code: '0177', name: 'Banco de la Fuerza Armada Nacional Bolivariana (BANFANB)' },
+  { code: '0191', name: 'Banco Nacional de Crédito (BNC)' },
+];
+
+// ---------- Toast ----------
 const Toast = ({
-  message,
-  type = 'error',
-  visible,
-  onHide,
+  message, type = 'error', visible, onHide,
 }: {
   message: string;
   type?: 'error' | 'success';
@@ -55,7 +81,6 @@ const Toast = ({
   );
 };
 
-// Icono personalizado
 const locationPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="%2300C9A7" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`
 )}`;
@@ -84,19 +109,21 @@ const TripActiveScreen = () => {
   const [tripPayment, setTripPayment] = useState<any>(null);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [reference, setReference] = useState('');
-  const [bankName, setBankName] = useState('');
+  const [selectedBankCode, setSelectedBankCode] = useState('');
   const [cedula, setCedula] = useState('');
   const [phone, setPhone] = useState('');
   const [sendingPayment, setSendingPayment] = useState(false);
   const [loadingBank, setLoadingBank] = useState(true);
+  const [bankModalVisible, setBankModalVisible] = useState(false);
 
   const [tripStatus, setTripStatus] = useState<string>('accepted');
   const [tripDestino, setTripDestino] = useState<{ lat: number; lng: number } | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<string>('cash');
 
-  // Nuevo estado para info pública del conductor
   const [driverPublicInfo, setDriverPublicInfo] = useState<{
     profilePicUrl?: string | null;
-    vehiclePhotos?: { photo1?: string | null; photo2?: string | null; photo3?: string | null };
+    vehiclePhotos?: { photo1?: string | null; photo2?: string | null; photo3?: string | null } | null;
+    vehicleDetails?: { marca_modelo?: string; color?: string; placa?: string; cilindrada?: number } | null;
   } | null>(null);
 
   const [toastVisible, setToastVisible] = useState(false);
@@ -110,8 +137,9 @@ const TripActiveScreen = () => {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const webViewRef = useRef<WebView>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // Bloquear retroceso
+  // ✅ Bloquear retroceso hasta finalizar o cancelar
   useEffect(() => {
     const backAction = () => {
       if (tripStatus !== 'completed' && tripStatus !== 'cancelled') {
@@ -124,12 +152,10 @@ const TripActiveScreen = () => {
     return () => backHandler.remove();
   }, [tripStatus]);
 
-  // Animación inicial
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  // Obtener datos bancarios y del viaje
   useEffect(() => {
     fetchBankData();
     fetchTripData();
@@ -141,9 +167,14 @@ const TripActiveScreen = () => {
       const res = await apiClient<{ result: boolean; content: any }>(
         `/private/trips/${tripId}/driver-bank-account`
       );
-      if (res.result) setBankData(res.content);
+      if (res.result) {
+        setBankData(res.content);
+      } else {
+        setBankData(null);
+      }
     } catch (err: any) {
       console.log('Error al cargar datos bancarios:', err.message);
+      setBankData(null);
     } finally {
       setLoadingBank(false);
     }
@@ -163,6 +194,9 @@ const TripActiveScreen = () => {
           payer_cedula: trip.payer_cedula,
           payer_phone: trip.payer_phone,
         });
+        if (trip.payment_method) {
+          setPaymentMethod(trip.payment_method);
+        }
         if (trip.payment_status === 'paid' || trip.payment_status === 'verified') {
           setShowPaymentForm(false);
         }
@@ -171,25 +205,47 @@ const TripActiveScreen = () => {
           setTripDestino({ lat: trip.dropoff_lat, lng: trip.dropoff_lng });
         }
 
-        // Obtener información pública del conductor
+        let publicInfoObtained = false;
+
         if (trip.driverPublicInfoUrl) {
           try {
             const publicRes = await apiClient<{ result: boolean; content: any }>(
               trip.driverPublicInfoUrl
             );
-            if (publicRes.result) {
+            if (publicRes.result && publicRes.content) {
+              const info = publicRes.content;
               setDriverPublicInfo({
-                profilePicUrl: publicRes.content.profilePicUrl,
-                vehiclePhotos: publicRes.content.vehiclePhotos,
+                profilePicUrl: info.profilePicUrl || null,
+                vehiclePhotos: info.vehiclePhotos || null,
+                vehicleDetails: info.vehicleDetails || null,
+              });
+              publicInfoObtained = true;
+            }
+          } catch (err) {
+            // Silencioso
+          }
+        }
+
+        if (!publicInfoObtained && driverId) {
+          try {
+            const publicRes = await apiClient<{ result: boolean; content: any }>(
+              `/private/driver-public/${driverId}`
+            );
+            if (publicRes.result && publicRes.content) {
+              const info = publicRes.content;
+              setDriverPublicInfo({
+                profilePicUrl: info.profilePicUrl || null,
+                vehiclePhotos: info.vehiclePhotos || null,
+                vehicleDetails: info.vehicleDetails || null,
               });
             }
           } catch (err) {
-            // silencioso
+            // Silencioso
           }
         }
       }
     } catch (err) {
-      // silencioso
+      // Silencioso
     }
   };
 
@@ -210,6 +266,7 @@ const TripActiveScreen = () => {
       socket.on('driverArrived', () => {
         showToast('¡El conductor ha llegado!', 'success');
         setTripStatus('arrived');
+        fetchBankData();
       });
 
       socket.on('tripStarted', () => {
@@ -248,7 +305,7 @@ const TripActiveScreen = () => {
   };
 
   const handleSendPayment = async () => {
-    if (!reference.trim() || !bankName.trim() || !cedula.trim() || !phone.trim()) {
+    if (!reference.trim() || !selectedBankCode || !cedula.trim() || !phone.trim()) {
       Alert.alert('Campos requeridos', 'Completa todos los datos del pago');
       return;
     }
@@ -256,7 +313,7 @@ const TripActiveScreen = () => {
     try {
       await confirmTripPayment(tripId!, {
         payment_reference: reference.trim(),
-        payer_bank: bankName.trim(),
+        payer_bank: selectedBankCode,
         payer_cedula: cedula.trim(),
         payer_phone: phone.trim(),
       });
@@ -340,8 +397,15 @@ const TripActiveScreen = () => {
   `
     : '';
 
+  const photos = driverPublicInfo?.vehiclePhotos;
+  const selectedBankName = BANKS.find(b => b.code === selectedBankCode)?.name || 'Selecciona tu banco';
+
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 300 : 0}
+    >
       <Toast message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
       {driverLocation ? (
         <WebView
@@ -357,39 +421,78 @@ const TripActiveScreen = () => {
           <Text>Esperando ubicación del conductor...</Text>
         </View>
       )}
-      <ScrollView style={styles.bottomSheet} contentContainerStyle={{ paddingBottom: 20 }}>
+      <ScrollView
+        style={styles.bottomSheet}
+        contentContainerStyle={{ paddingBottom: 20 }}
+        keyboardShouldPersistTaps="handled"
+      >
         <Animated.View style={{ opacity: fadeAnim }}>
           {/* Datos del conductor */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Conductor</Text>
             <View style={styles.row}>
               {driverPublicInfo?.profilePicUrl ? (
-                <Image source={{ uri: driverPublicInfo.profilePicUrl }} style={styles.profilePic} />
+                <TouchableOpacity onPress={() => setSelectedImage(driverPublicInfo.profilePicUrl!)}>
+                  <Image source={{ uri: driverPublicInfo.profilePicUrl }} style={styles.profilePic} />
+                </TouchableOpacity>
               ) : (
                 <Feather name="user" size={20} color="#00C9A7" />
               )}
               <Text style={styles.infoText}>{driverName || 'Conductor'}</Text>
             </View>
-            <View style={styles.row}>
-              <Feather name="truck" size={20} color="#00C9A7" />
-              <Text style={styles.infoText}>{vehicle || 'Moto'}</Text>
-            </View>
 
-            {/* Fotos del vehículo */}
-            {driverPublicInfo?.vehiclePhotos && (
+            {driverPublicInfo?.vehicleDetails && (
+              <>
+                <View style={styles.row}>
+                  <Feather name="credit-card" size={20} color="#00C9A7" />
+                  <Text style={styles.infoText}>Placa: {driverPublicInfo.vehicleDetails.placa}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Feather name="tool" size={20} color="#00C9A7" />
+                  <Text style={styles.infoText}>Marca: {driverPublicInfo.vehicleDetails.marca_modelo}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Feather name="droplet" size={20} color="#00C9A7" />
+                  <Text style={styles.infoText}>Color: {driverPublicInfo.vehicleDetails.color}</Text>
+                </View>
+                {driverPublicInfo.vehicleDetails.cilindrada && (
+                  <View style={styles.row}>
+                    <Feather name="settings" size={20} color="#00C9A7" />
+                    <Text style={styles.infoText}>Cilindrada: {driverPublicInfo.vehicleDetails.cilindrada} cc</Text>
+                  </View>
+                )}
+              </>
+            )}
+
+            {photos && (
               <View style={styles.vehiclePhotosContainer}>
-                {driverPublicInfo.vehiclePhotos.photo1 && (
-                  <Image source={{ uri: driverPublicInfo.vehiclePhotos.photo1 }} style={styles.vehiclePhoto} />
+                {photos.photo1 && (
+                  <TouchableOpacity onPress={() => setSelectedImage(photos.photo1!)}>
+                    <Image source={{ uri: photos.photo1 }} style={styles.vehiclePhoto} />
+                  </TouchableOpacity>
                 )}
-                {driverPublicInfo.vehiclePhotos.photo2 && (
-                  <Image source={{ uri: driverPublicInfo.vehiclePhotos.photo2 }} style={styles.vehiclePhoto} />
+                {photos.photo2 && (
+                  <TouchableOpacity onPress={() => setSelectedImage(photos.photo2!)}>
+                    <Image source={{ uri: photos.photo2 }} style={styles.vehiclePhoto} />
+                  </TouchableOpacity>
                 )}
-                {driverPublicInfo.vehiclePhotos.photo3 && (
-                  <Image source={{ uri: driverPublicInfo.vehiclePhotos.photo3 }} style={styles.vehiclePhoto} />
+                {photos.photo3 && (
+                  <TouchableOpacity onPress={() => setSelectedImage(photos.photo3!)}>
+                    <Image source={{ uri: photos.photo3 }} style={styles.vehiclePhoto} />
+                  </TouchableOpacity>
                 )}
               </View>
             )}
           </View>
+
+          {/* Chat */}
+          <TouchableOpacity
+            style={styles.chatButton}
+            onPress={() => router.push({ pathname: '/chat', params: { tripId, chatWith: driverName || 'Conductor' } })}
+          >
+            <Feather name="message-circle" size={20} color="#fff" />
+            <Text style={styles.chatButtonText}> Chat</Text>
+          </TouchableOpacity>
 
           {/* Estado del viaje */}
           <View style={styles.card}>
@@ -413,87 +516,189 @@ const TripActiveScreen = () => {
               </View>
             )}
             {tripStatus === 'completed' && (
-              <View style={styles.statusRow}>
-                <Feather name="check-circle" size={20} color="#4CAF50" />
-                <Text style={styles.statusText}>Viaje finalizado</Text>
-              </View>
+              <>
+                <View style={styles.statusRow}>
+                  <Feather name="check-circle" size={20} color="#4CAF50" />
+                  <Text style={styles.statusText}>Viaje finalizado</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.payButton, { backgroundColor: '#6B7280' }]}
+                  onPress={() => router.replace('/dashboard')}
+                >
+                  <Feather name="home" size={20} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.payButtonText}>Volver al inicio</Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
 
-          {/* Datos bancarios */}
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Datos para transferencia</Text>
-            {loadingBank ? (
-              <ActivityIndicator size="small" color="#00C9A7" />
-            ) : bankData ? (
-              <>
-                <View style={styles.bankRow}>
-                  <Feather name="credit-card" size={16} color="#00C9A7" style={{ marginRight: 8 }} />
-                  <Text style={styles.bankLabel}>Banco:</Text>
-                  <Text style={styles.bankValue}>{bankData.bankName}</Text>
-                </View>
-                <View style={styles.bankRow}>
-                  <Feather name="user" size={16} color="#00C9A7" style={{ marginRight: 8 }} />
-                  <Text style={styles.bankLabel}>Cédula:</Text>
-                  <Text style={styles.bankValue}>{bankData.cedula}</Text>
-                </View>
-                <View style={styles.bankRow}>
-                  <Feather name="phone" size={16} color="#00C9A7" style={{ marginRight: 8 }} />
-                  <Text style={styles.bankLabel}>Teléfono:</Text>
-                  <Text style={styles.bankValue}>{bankData.phone}</Text>
-                </View>
-              </>
-            ) : (
-              <Text style={styles.noBankText}>El conductor no ha registrado sus datos bancarios.</Text>
-            )}
-          </View>
+          {/* Datos bancarios solo si pago no es por app */}
+          {paymentMethod !== 'app' && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Datos para transferencia</Text>
+              {loadingBank ? (
+                <ActivityIndicator size="small" color="#00C9A7" />
+              ) : bankData ? (
+                <>
+                  <View style={styles.bankRow}>
+                    <Feather name="credit-card" size={16} color="#00C9A7" style={{ marginRight: 8 }} />
+                    <Text style={styles.bankLabel}>Banco:</Text>
+                    <Text style={styles.bankValue}>{bankData.bankName}</Text>
+                  </View>
+                  <View style={styles.bankRow}>
+                    <Feather name="user" size={16} color="#00C9A7" style={{ marginRight: 8 }} />
+                    <Text style={styles.bankLabel}>Cédula:</Text>
+                    <Text style={styles.bankValue}>{bankData.cedula}</Text>
+                  </View>
+                  <View style={styles.bankRow}>
+                    <Feather name="phone" size={16} color="#00C9A7" style={{ marginRight: 8 }} />
+                    <Text style={styles.bankLabel}>Teléfono:</Text>
+                    <Text style={styles.bankValue}>{bankData.phone}</Text>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.noBankText}>El conductor no ha registrado sus datos bancarios.</Text>
+              )}
+            </View>
+          )}
 
           {/* Sección de pago */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Pago</Text>
-            {!tripPayment || tripPayment.payment_status === 'pending' ? (
-              !showPaymentForm ? (
-                <TouchableOpacity style={styles.payButton} onPress={() => setShowPaymentForm(true)}>
-                  <Feather name="credit-card" size={20} color="#fff" style={{ marginRight: 8 }} />
-                  <Text style={styles.payButtonText}>Enviar comprobante de pago</Text>
-                </TouchableOpacity>
-              ) : (
-                <View>
-                  <TextInput style={styles.input} placeholder="Referencia del pago" value={reference} onChangeText={setReference} />
-                  <TextInput style={styles.input} placeholder="Banco (ej: 0102)" value={bankName} onChangeText={setBankName} />
-                  <TextInput style={styles.input} placeholder="Cédula" value={cedula} onChangeText={setCedula} />
-                  <TextInput style={styles.input} placeholder="Teléfono" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-                  <TouchableOpacity style={styles.payButton} onPress={handleSendPayment} disabled={sendingPayment}>
-                    {sendingPayment ? <ActivityIndicator color="#fff" /> : <Text style={styles.payButtonText}>Enviar</Text>}
-                  </TouchableOpacity>
-                </View>
-              )
-            ) : (
+            {paymentMethod === 'app' ? (
               <View style={styles.paymentStatus}>
-                <Feather name={tripPayment.payment_status === 'verified' ? 'check-circle' : 'clock'} size={24} color={tripPayment.payment_status === 'verified' ? '#4CAF50' : '#FFA500'} />
+                <Feather name="smartphone" size={24} color="#00C9A7" />
                 <Text style={styles.statusText}>
-                  {tripPayment.payment_status === 'paid' ? 'Pendiente de verificación' : 'Verificado'}
+                  El pago se realizará automáticamente al finalizar el viaje
                 </Text>
-                {tripPayment.payment_reference && <Text style={styles.refText}>Ref: {tripPayment.payment_reference}</Text>}
               </View>
+            ) : (
+              <>
+                {!tripPayment || tripPayment.payment_status === 'pending' ? (
+                  !showPaymentForm ? (
+                    <TouchableOpacity style={styles.payButton} onPress={() => setShowPaymentForm(true)}>
+                      <Feather name="credit-card" size={20} color="#fff" style={{ marginRight: 8 }} />
+                      <Text style={styles.payButtonText}>Enviar comprobante de pago</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Referencia del pago"
+                        value={reference}
+                        onChangeText={setReference}
+                        autoCapitalize="none"
+                      />
+                      <TouchableOpacity
+                        style={styles.bankSelector}
+                        onPress={() => setBankModalVisible(true)}
+                      >
+                        <Text style={[styles.bankSelectorText, !selectedBankCode && { color: '#9CA3AF' }]}>
+                          {selectedBankName}
+                        </Text>
+                        <Feather name="chevron-down" size={20} color="#9CA3AF" />
+                      </TouchableOpacity>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Cédula"
+                        value={cedula}
+                        onChangeText={setCedula}
+                        keyboardType="number-pad"
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Teléfono"
+                        value={phone}
+                        onChangeText={setPhone}
+                        keyboardType="phone-pad"
+                      />
+                      <TouchableOpacity
+                        style={styles.payButton}
+                        onPress={handleSendPayment}
+                        disabled={sendingPayment}
+                      >
+                        {sendingPayment ? <ActivityIndicator color="#fff" /> : <Text style={styles.payButtonText}>Enviar</Text>}
+                      </TouchableOpacity>
+                    </View>
+                  )
+                ) : (
+                  <View style={styles.paymentStatus}>
+                    <Feather name={tripPayment.payment_status === 'verified' ? 'check-circle' : 'clock'} size={24} color={tripPayment.payment_status === 'verified' ? '#4CAF50' : '#FFA500'} />
+                    <Text style={styles.statusText}>
+                      {tripPayment.payment_status === 'paid' ? 'Pendiente de verificación' : 'Verificado'}
+                    </Text>
+                    {tripPayment.payment_reference && (
+                      <Text style={styles.refText}>Ref: {tripPayment.payment_reference}</Text>
+                    )}
+                  </View>
+                )}
+              </>
             )}
           </View>
-
-          {/* Botón Chat */}
-          <TouchableOpacity
-            style={styles.chatButton}
-            onPress={() => router.push({ pathname: '/chat', params: { tripId, chatWith: driverName || 'Conductor' } })}
-          >
-            <Feather name="message-circle" size={20} color="#fff" />
-            <Text style={styles.chatButtonText}> Chat</Text>
-          </TouchableOpacity>
         </Animated.View>
       </ScrollView>
-    </View>
+
+      {/* Modal de banco */}
+      <Modal
+        visible={bankModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBankModalVisible(false)}
+      >
+        <View style={styles.modalOverlayBank}>
+          <View style={styles.modalBankContainer}>
+            <View style={styles.modalBankHeader}>
+              <Text style={styles.modalBankTitle}>Selecciona tu banco</Text>
+              <TouchableOpacity onPress={() => setBankModalVisible(false)}>
+                <Feather name="x" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={BANKS}
+              keyExtractor={(item) => item.code}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.bankItem}
+                  onPress={() => {
+                    setSelectedBankCode(item.code);
+                    setBankModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.bankItemText}>{item.name} ({item.code})</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal imagen ampliada */}
+      <Modal
+        visible={selectedImage !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedImage(null)}
+      >
+        <View style={styles.imageModalOverlay}>
+          <TouchableOpacity
+            style={styles.imageModalClose}
+            onPress={() => setSelectedImage(null)}
+          >
+            <Feather name="x" size={28} color="#fff" />
+          </TouchableOpacity>
+          {selectedImage && (
+            <Image
+              source={{ uri: selectedImage }}
+              style={styles.imageModalFull}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 };
 
-// Estilos (los mismos, añadiendo profilePic y vehiclePhoto)
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   map: { height: 300 },
@@ -501,7 +706,6 @@ const styles = StyleSheet.create({
   profilePic: { width: 40, height: 40, borderRadius: 20, marginRight: 12 },
   vehiclePhotosContainer: { flexDirection: 'row', marginTop: 10, gap: 8 },
   vehiclePhoto: { width: 80, height: 80, borderRadius: 8 },
-  // ... resto de estilos sin cambios
   bottomSheet: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -543,6 +747,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#111827',
   },
+  bankSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  bankSelectorText: { flex: 1, fontSize: 16, color: '#111827' },
   payButton: {
     backgroundColor: '#00C9A7',
     borderRadius: 14,
@@ -562,7 +777,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    marginBottom: 16,
   },
   chatButtonText: { color: '#fff', fontWeight: '600', fontSize: 16, marginLeft: 8 },
   toast: {
@@ -581,6 +796,50 @@ const styles = StyleSheet.create({
   },
   toastContent: { flexDirection: 'row', alignItems: 'center' },
   toastText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600', flex: 1 },
+  modalOverlayBank: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalBankContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    maxHeight: '80%',
+    overflow: 'hidden',
+  },
+  modalBankHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalBankTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
+  bankItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  bankItemText: { fontSize: 16, color: '#1F2937' },
+  imageModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageModalClose: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: 10,
+  },
+  imageModalFull: {
+    width: '100%',
+    height: '100%',
+  },
 });
 
 export default TripActiveScreen;

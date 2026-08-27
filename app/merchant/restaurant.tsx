@@ -54,7 +54,7 @@ const RestaurantsScreen = () => {
         data={restaurants}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingBottom: 20 }}
-        ListEmptyComponent={<Text style={styles.empty}>No hay restaurantes disponibles</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>No hay locales de comida disponibles (no hay en tu area o no hay ninguno afiliado)</Text>}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}

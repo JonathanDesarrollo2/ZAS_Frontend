@@ -17,7 +17,7 @@ import LoadingOverlay from '../presentation/components/shared/LoadingOverlay';
 import { connectSocket } from './socket/socketClient';
 import ToastNotification from '../presentation/components/shared/toastNotification';
 import { apiClient } from '../apis/Client';
-import { getActiveTrip } from '../apis/trips'; // ← NUEVO
+import { getActiveTrip } from '../apis/trips';
 import ProfileAvatar from '../components/ProfileAvatar';
 
 type FeatherIconName =
@@ -29,11 +29,13 @@ type FeatherIconName =
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.75;
 
+// Logo sin contenedor cuadrado
 const LogoIcon = () => (
-  <View style={styles.logoContainer}>
-    <Image source={require('../assets/images/logo.png')} style={styles.logoImage} resizeMode="contain" />
-    <View style={styles.pinDot} />
-  </View>
+  <Image
+    source={require('../assets/images/logo.png')}
+    style={styles.logoImage}
+    resizeMode="contain"
+  />
 );
 
 const ServiceCard = ({
@@ -72,13 +74,15 @@ const MenuItem = ({ icon, label, onPress }: { icon: FeatherIconName; label: stri
 );
 
 const DashboardScreen = () => {
-  const { user, logout, checkSession, isLoading } = useAuth(); // ← isLoading añadido
+  const { user, logout, checkSession, isLoading } = useAuth();
   const isKYC = user?.isKYCVerified;
   const isEmailVerified = user?.isEmailVerified;
   const isDriver = user?.nivel === 2;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  const [recentTrips, setRecentTrips] = useState<any[]>([]);
 
   useEffect(() => {
     Animated.parallel([
@@ -143,7 +147,6 @@ const DashboardScreen = () => {
     setupSocket();
   }, []);
 
-  // 🔁 NUEVO: Restaurar viaje activo al cargar el dashboard
   useEffect(() => {
     if (!user || isLoading) return;
 
@@ -176,6 +179,21 @@ const DashboardScreen = () => {
 
     checkActiveTrip();
   }, [user?.id, user?.nivel, isLoading]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const fetchRecentTrips = async () => {
+      try {
+        const res = await apiClient<{ result: boolean; content: any[] }>('/private/trips/history');
+        if (res.result) {
+          setRecentTrips(res.content);
+        }
+      } catch (err) {
+        // silencioso
+      }
+    };
+    fetchRecentTrips();
+  }, [user?.id]);
 
   const handleKYCRequired = () => {
     showToast('KYC requerido: Debes verificar tu identidad primero.');
@@ -271,7 +289,7 @@ const DashboardScreen = () => {
         icon="package"
         title="Delivery"
         desc="Pide comida a negocios locales"
-        onPress={isKYC ? () => showToast('Próximamente', 'success') : handleKYCRequired}
+        onPress={isKYC ? () => router.push('/merchant/restaurant') : handleKYCRequired}
         disabled={!isKYC}
       />
       <View style={styles.separator} />
@@ -306,7 +324,13 @@ const DashboardScreen = () => {
           <ProfileAvatar size={95} />
           <View style={{ flex: 1, marginLeft: 8 }}>
             <Text style={styles.menuUserName}>{user?.sesionUser || 'Usuario'}</Text>
-            <Text style={styles.menuUserEmail}>{user?.sesionEmail || ''}</Text>
+            <Text
+              style={styles.menuUserEmail}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {user?.sesionEmail || ''}
+            </Text>
           </View>
           <TouchableOpacity onPress={closeMenu} style={styles.menuCloseBtn}>
             <Feather name="x" size={24} color="#6B7280" />
@@ -335,12 +359,12 @@ const DashboardScreen = () => {
             label="Historial"
             onPress={() => {
               closeMenu();
-              showToast('Historial próximamente', 'error');
+              router.push('/history');
             }}
           />
           <MenuItem
             icon="credit-card"
-            label="Cuenta Bancaria"
+            label="Datos de pago móvil"
             onPress={() => {
               closeMenu();
               router.push('/bank-account' as any);
@@ -352,19 +376,21 @@ const DashboardScreen = () => {
       </Animated.View>
 
       <Animated.View style={[styles.mainContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+        {/* Barra superior: menú, logo a la izquierda, luego espacio flexible y saldo/notificaciones */}
         <View style={styles.topBar}>
           <TouchableOpacity onPress={openMenu} style={{ marginRight: 12 }}>
             <Feather name="menu" size={24} color="#1F2937" />
           </TouchableOpacity>
           <LogoIcon />
-          <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={() => router.push('/add-balance')}>
             <Text style={styles.balanceMini}>
               ${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}
             </Text>
-            <TouchableOpacity onPress={() => router.push('/notifications')}>
-              <Feather name="bell" size={24} color="#1F2937" />
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/notifications')} style={{ marginLeft: 16 }}>
+            <Feather name="bell" size={24} color="#1F2937" />
+          </TouchableOpacity>
         </View>
 
         <ScrollView
@@ -416,11 +442,44 @@ const DashboardScreen = () => {
           </View>
 
           <Text style={styles.sectionTitle}>Actividad reciente</Text>
-          <View style={styles.emptyActivity}>
-            <Feather name="clock" size={40} color="#ccc" />
-            <Text style={styles.emptyText}>Aún no tienes actividad</Text>
-            <Text style={styles.emptySub}>Tus viajes y entregas aparecerán aquí</Text>
-          </View>
+          {recentTrips.length === 0 ? (
+            <View style={styles.emptyActivity}>
+              <Feather name="clock" size={40} color="#ccc" />
+              <Text style={styles.emptyText}>Aún no tienes actividad</Text>
+              <Text style={styles.emptySub}>Tus viajes aparecerán aquí</Text>
+            </View>
+          ) : (
+            <View style={styles.tripsContainer}>
+              {recentTrips.slice(0, 2).map((trip) => (
+                <View key={trip.id} style={styles.tripCard}>
+                  <View style={styles.tripHeader}>
+                    {trip.counterpartPicUrl ? (
+                      <Image source={{ uri: trip.counterpartPicUrl }} style={styles.tripAvatar} />
+                    ) : (
+                      <Feather name="user" size={24} color="#9CA3AF" style={styles.tripAvatarPlaceholder} />
+                    )}
+                    <Text style={styles.tripName}>{trip.counterpartName}</Text>
+                    <Text style={styles.tripPrice}>${Number(trip.price).toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.tripRoute}>
+                    <Text style={styles.tripAddress}>📍 {trip.origin_address}</Text>
+                    <Text style={styles.tripAddress}>🏁 {trip.destination_address}</Text>
+                  </View>
+                  <Text style={styles.tripDate}>
+                    {new Date(trip.createdAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                style={styles.viewAllButton}
+                onPress={() => router.push('/history')}
+              >
+                <Text style={styles.viewAllText}>Ver historial completo</Text>
+                <Feather name="chevron-right" size={18} color="#00C9A7" />
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.footer}>
             <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
@@ -435,30 +494,16 @@ const DashboardScreen = () => {
   );
 };
 
-// Estilos (idénticos)
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   mainContainer: { flex: 1, paddingHorizontal: 20, paddingTop: 60 },
   topBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
-  logoContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: '#E6FFFA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#00C9A7',
-  },
-  logoImage: { width: 32, height: 32 },
-  pinDot: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#00C9A7',
+  // Eliminados logoContainer y pinDot
+  logoImage: {
+    width: 70,
+    height: 70,
+    resizeMode: 'contain',
+    marginRight: 8,
   },
   scrollArea: { flex: 1 },
   scrollContent: { paddingBottom: 40 },
@@ -572,7 +617,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   menuUserName: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
-  menuUserEmail: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  menuUserEmail: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+    flexShrink: 1,
+  },
   menuCloseBtn: { padding: 8 },
   menuScroll: { flex: 1, paddingHorizontal: 20 },
   menuItem: {
@@ -593,6 +643,67 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 10,
     overflow: 'hidden',
+  },
+  tripsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E5F5F0',
+  },
+  tripCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  tripHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  tripAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  tripAvatarPlaceholder: {
+    marginRight: 8,
+  },
+  tripName: {
+    flex: 1,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  tripPrice: {
+    fontWeight: '700',
+    color: '#00C9A7',
+  },
+  tripRoute: {
+    marginBottom: 4,
+  },
+  tripAddress: {
+    color: '#374151',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  tripDate: {
+    color: '#9CA3AF',
+    fontSize: 12,
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  viewAllText: {
+    color: '#00C9A7',
+    fontWeight: '600',
+    fontSize: 16,
+    marginRight: 4,
   },
 });
 
