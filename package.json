@@ -1,7 +1,7 @@
 {
   "name": "zas_frontend",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -19,6 +19,7 @@
     "@react-navigation/elements": "^2.9.10",
     "@react-navigation/native": "^7.1.33",
     "expo": "~55.0.7",
+    "expo-build-properties": "~55.0.18",
     "expo-constants": "~55.0.17",
     "expo-device": "~55.0.19",
     "expo-document-picker": "~55.0.14",

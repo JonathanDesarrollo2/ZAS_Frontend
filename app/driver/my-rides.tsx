@@ -87,8 +87,8 @@ const DriverRidesScreen = () => {
             <View style={styles.modal}>
               <Text style={styles.modalTitle}>Agregar pasajero</Text>
               <View style={styles.inputRow}><Feather name="users" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Puestos" keyboardType="numeric" value={manualSeats} onChangeText={setManualSeats} style={styles.input} /></View>
-              <View style={styles.inputRow}><Feather name="user" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Nombre (opcional)" value={manualName} onChangeText={setManualName} style={styles.input} /></View>
-              <View style={styles.inputRow}><Feather name="phone" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Teléfono (opcional)" keyboardType="phone-pad" value={manualPhone} onChangeText={setManualPhone} style={styles.input} /></View>
+              <View style={styles.inputRow}><Feather name="user" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Nombre" value={manualName} onChangeText={setManualName} style={styles.input} /></View>
+              <View style={styles.inputRow}><Feather name="phone" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Teléfono " keyboardType="phone-pad" value={manualPhone} onChangeText={setManualPhone} style={styles.input} /></View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 }}>
                 <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#00C9A7' }]} onPress={addManual}><Text style={styles.modalBtnText}>Agregar</Text></TouchableOpacity>
                 <TouchableOpacity style={[styles.modalBtn, { backgroundColor: '#9ca3af' }]} onPress={() => setModalVisible(false)}><Text style={styles.modalBtnText}>Cancelar</Text></TouchableOpacity>

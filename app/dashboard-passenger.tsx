@@ -12,7 +12,7 @@ import ProfileAvatar from '../components/ProfileAvatar';
 
 type FeatherIconName =
   | 'navigation' | 'package' | 'map-pin' | 'chevron-right' | 'bell' | 'log-out' | 'menu'
-  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'dollar-sign' | 'mail';
+  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'mail';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.75;
@@ -175,12 +175,10 @@ const DashboardPassengerScreen = () => {
             <Feather name="menu" size={24} color="#1F2937" />
           </TouchableOpacity>
           <LogoIcon />
-          <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
-            <Text style={styles.balanceMini}>${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}</Text>
-            <TouchableOpacity onPress={() => router.push('/notifications')}>
-              <Feather name="bell" size={24} color="#1F2937" />
-            </TouchableOpacity>
-          </View>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={() => router.push('/notifications')}>
+            <Feather name="bell" size={24} color="#1F2937" />
+          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -197,15 +195,6 @@ const DashboardPassengerScreen = () => {
               </View>
             )}
           </View>
-
-          <TouchableOpacity style={styles.balanceCard} onPress={() => router.push('/add-balance')} activeOpacity={0.8}>
-            <Feather name="dollar-sign" size={20} color="#00C9A7" style={{ marginRight: 10 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.balanceLabel}>Saldo disponible</Text>
-              <Text style={styles.balanceAmount}>${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}</Text>
-            </View>
-            <Feather name="plus-circle" size={22} color="#00C9A7" />
-          </TouchableOpacity>
 
           <View style={styles.servicesContainer}>{passengerModules}</View>
 
@@ -243,9 +232,6 @@ const styles = StyleSheet.create({
   compactWarning: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF3E0', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 8, gap: 6 },
   compactWarningText: { color: '#E65100', fontSize: 13, flex: 1 },
   compactLink: { color: '#3c87f7', fontWeight: '600', fontSize: 13 },
-  balanceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#E5F5F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
-  balanceLabel: { color: '#6B7280', fontSize: 14 },
-  balanceAmount: { color: '#1F2937', fontSize: 22, fontWeight: '700', marginTop: 4 },
   servicesContainer: { backgroundColor: '#FFFFFF', borderRadius: 20, marginBottom: 28, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3, borderWidth: 1, borderColor: '#E5F5F0', overflow: 'hidden' },
   serviceCard: { flexDirection: 'row', alignItems: 'center', padding: 18 },
   separator: { height: 1, backgroundColor: '#E5F5F0', marginHorizontal: 18 },
@@ -270,7 +256,6 @@ const styles = StyleSheet.create({
   menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
   menuItemText: { fontSize: 16, fontWeight: '500', color: '#1F2937' },
   menuDivider: { height: 1, backgroundColor: '#E5F5F0', marginVertical: 8 },
-  balanceMini: { fontSize: 16, fontWeight: '700', color: '#00C9A7', backgroundColor: '#E6FFFA', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, overflow: 'hidden' },
 });
 
 export default DashboardPassengerScreen;

@@ -1,12 +1,14 @@
+// app/driver/find-trips.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Animated, Alert
+  View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Animated, Alert,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { apiClient } from '../../apis/Client';
-import { getSocket } from '../socket/socketClient';
+import { connectSocket, getSocket } from '../socket/socketClient'; // ✅ Importamos connectSocket
 
 interface Trip {
   id: string;
@@ -29,10 +31,9 @@ const FindTripsScreen = () => {
 
   const fetchTrips = useCallback(async () => {
     if (!currentCoords) return;
-    setLoading(true);
     try {
       const { lat, lng } = currentCoords;
-      const radius = 5;
+      const radius = 10; // radio en km
       const endpoint = `/private/trips/available?lat=${lat}&lng=${lng}&radius=${radius}`;
       const response = await apiClient<{ result: boolean; content: Trip[] }>(endpoint);
       if (response.result) {
@@ -56,18 +57,72 @@ const FindTripsScreen = () => {
     return () => { socket.off('newTripAvailable', handleNewTrip); };
   }, [fetchTrips]);
 
-  // Obtener ubicación actual
+  // Obtener ubicación optimizada y enviarla periódicamente al backend
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permiso de ubicación', 'Se necesita acceso a tu ubicación para buscar viajes.');
-        setLoading(false);
-        return;
+    let isMounted = true;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    const getLocationAndStartSending = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permiso de ubicación', 'Se necesita acceso a tu ubicación para buscar viajes.');
+          setLoading(false);
+          return;
+        }
+
+        // 1. Intentar con última ubicación conocida (rápido)
+        let location = await Location.getLastKnownPositionAsync();
+        if (location && isMounted) {
+          setCurrentCoords({
+            lat: location.coords.latitude,
+            lng: location.coords.longitude,
+          });
+        }
+
+        // 2. Actualizar con ubicación precisa en segundo plano
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 1000,
+          distanceInterval: 1,
+        })
+          .then((preciseLocation) => {
+            if (preciseLocation && isMounted) {
+              setCurrentCoords({
+                lat: preciseLocation.coords.latitude,
+                lng: preciseLocation.coords.longitude,
+              });
+            }
+          })
+          .catch(() => {
+            // Mantener última ubicación conocida si falla
+          });
+
+        // 3. Enviar ubicación al backend cada 5 segundos
+        interval = setInterval(async () => {
+          try {
+            const currentLocation = await Location.getCurrentPositionAsync({});
+            const socket = await connectSocket();
+            socket.emit('driver:location', {
+              tripId: 'find-trips', // string temporal, no afecta el backend
+              lat: currentLocation.coords.latitude,
+              lng: currentLocation.coords.longitude,
+            });
+          } catch (err) {
+            // Silencioso
+          }
+        }, 5000);
+      } catch (err) {
+        if (isMounted) setLoading(false);
       }
-      const location = await Location.getCurrentPositionAsync({});
-      setCurrentCoords({ lat: location.coords.latitude, lng: location.coords.longitude });
-    })();
+    };
+
+    getLocationAndStartSending();
+
+    return () => {
+      isMounted = false;
+      if (interval) clearInterval(interval);
+    };
   }, []);
 
   // Cargar viajes cuando ya tengamos coordenadas
@@ -107,7 +162,7 @@ const FindTripsScreen = () => {
     </TouchableOpacity>
   );
 
-  if (loading || !currentCoords) {
+  if (loading && !currentCoords) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#00C9A7" />
@@ -138,7 +193,6 @@ const FindTripsScreen = () => {
   );
 };
 
-// Estilos sin cambios
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   container: { flex: 1, paddingTop: 60 },

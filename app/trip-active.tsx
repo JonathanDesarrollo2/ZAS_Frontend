@@ -4,14 +4,14 @@ import {
   View, Text, TouchableOpacity, Animated, StyleSheet,
   TextInput, ActivityIndicator, ScrollView, Alert, Image,
   Modal, KeyboardAvoidingView, Platform, FlatList,
-  BackHandler,
+  BackHandler, AppState,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { connectSocket, getSocket } from './socket/socketClient';
 import { apiClient } from '../apis/Client';
-import { confirmTripPayment } from '../apis/trips';
+import { confirmTripPayment, completeTrip, cancelTrip } from '../apis/trips';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
@@ -43,10 +43,7 @@ const BANKS = [
   { code: '0191', name: 'Banco Nacional de Crédito (BNC)' },
 ];
 
-// ---------- Toast ----------
-const Toast = ({
-  message, type = 'error', visible, onHide,
-}: {
+const Toast = ({ message, type = 'error', visible, onHide }: {
   message: string;
   type?: 'error' | 'success';
   visible: boolean;
@@ -100,7 +97,7 @@ const TripActiveScreen = () => {
     if (driverLat && driverLng) {
       const lat = Number(driverLat);
       const lng = Number(driverLng);
-      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+      if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) return { lat, lng };
     }
     return null;
   });
@@ -139,7 +136,25 @@ const TripActiveScreen = () => {
   const webViewRef = useRef<WebView>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // ✅ Bloquear retroceso hasta finalizar o cancelar
+  // Polling para actualizar estado cada 5 segundos
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchTripData();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [tripId]);
+
+  // Al volver a la app, refrescar estado
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        fetchTripData();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Bloquear retroceso hasta finalizar
   useEffect(() => {
     const backAction = () => {
       if (tripStatus !== 'completed' && tripStatus !== 'cancelled') {
@@ -255,11 +270,13 @@ const TripActiveScreen = () => {
       socket.emit('trip:join', tripId);
 
       socket.on('trip:tracking', (data: any) => {
-        if (data.driverId === driverId) {
-          setDriverLocation({ lat: data.lat, lng: data.lng });
-          webViewRef.current?.injectJavaScript(`
-            updateDriverPosition(${data.lat}, ${data.lng});
-          `);
+        if (data.driverId === driverId || data.tripId === tripId) {
+          if (data.lat && data.lng) {
+            setDriverLocation({ lat: data.lat, lng: data.lng });
+            webViewRef.current?.injectJavaScript(`
+              updateDriverPosition(${data.lat}, ${data.lng});
+            `);
+          }
         }
       });
 
@@ -275,6 +292,11 @@ const TripActiveScreen = () => {
         fetchTripData();
       });
 
+      socket.on('tripDestinationReached', (data: any) => {
+        showToast('El conductor ha llegado al destino. Confirma tu llegada.', 'success');
+        setTripStatus('arrived_destination');
+      });
+
       socket.on('tripCompleted', () => {
         showToast('Has llegado a tu destino', 'success');
         setTripStatus('completed');
@@ -288,6 +310,13 @@ const TripActiveScreen = () => {
           showToast('El conductor ha rechazado tu pago', 'error');
         }
       });
+
+      socket.on('tripCancelled', (data: any) => {
+        showToast('Viaje cancelado', 'error');
+        setTripStatus('cancelled');
+        setTimeout(() => router.replace('/dashboard'), 800);
+      });
+
     } catch (error) {
       console.error('Error al conectar socket:', error);
     }
@@ -298,8 +327,10 @@ const TripActiveScreen = () => {
         socket.off('trip:tracking');
         socket.off('driverArrived');
         socket.off('tripStarted');
+        socket.off('tripDestinationReached');
         socket.off('tripCompleted');
         socket.off('tripPaymentStatusChanged');
+        socket.off('tripCancelled');
       }
     };
   };
@@ -323,6 +354,25 @@ const TripActiveScreen = () => {
       Alert.alert('Error', err.message);
     } finally {
       setSendingPayment(false);
+    }
+  };
+
+  const handleConfirmDestination = async () => {
+    try {
+      await completeTrip(tripId!);
+      setTripStatus('completed');
+      showToast('Viaje completado', 'success');
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
+  };
+
+  const handleCancelTrip = async () => {
+    try {
+      await cancelTrip(tripId!);
+      router.replace('/dashboard');
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
     }
   };
 
@@ -423,7 +473,7 @@ const TripActiveScreen = () => {
       )}
       <ScrollView
         style={styles.bottomSheet}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled"
       >
         <Animated.View style={{ opacity: fadeAnim }}>
@@ -485,7 +535,6 @@ const TripActiveScreen = () => {
             )}
           </View>
 
-          {/* Chat */}
           <TouchableOpacity
             style={styles.chatButton}
             onPress={() => router.push({ pathname: '/chat', params: { tripId, chatWith: driverName || 'Conductor' } })}
@@ -515,6 +564,21 @@ const TripActiveScreen = () => {
                 <Text style={styles.statusText}>En camino a tu destino</Text>
               </View>
             )}
+            {tripStatus === 'arrived_destination' && (
+              <>
+                <View style={styles.statusRow}>
+                  <Feather name="flag" size={20} color="#4CAF50" />
+                  <Text style={styles.statusText}>El conductor ha llegado al destino</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.payButton, { backgroundColor: '#4CAF50' }]}
+                  onPress={handleConfirmDestination}
+                >
+                  <Feather name="check-circle" size={20} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.payButtonText}>Confirmar destino</Text>
+                </TouchableOpacity>
+              </>
+            )}
             {tripStatus === 'completed' && (
               <>
                 <View style={styles.statusRow}>
@@ -532,7 +596,7 @@ const TripActiveScreen = () => {
             )}
           </View>
 
-          {/* Datos bancarios solo si pago no es por app */}
+          {/* Datos bancarios solo si no es app */}
           {paymentMethod !== 'app' && (
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Datos para transferencia</Text>
@@ -635,10 +699,20 @@ const TripActiveScreen = () => {
               </>
             )}
           </View>
+
+          {/* Botón cancelar viaje (con margen inferior amplio) */}
+          {['accepted'].includes(tripStatus) && (
+            <TouchableOpacity
+              style={[styles.payButton, { backgroundColor: '#FF5252', marginTop: 10, marginBottom: 20 }]}
+              onPress={handleCancelTrip}
+            >
+              <Feather name="x-circle" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.payButtonText}>Cancelar viaje</Text>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       </ScrollView>
 
-      {/* Modal de banco */}
       <Modal
         visible={bankModalVisible}
         transparent
@@ -672,7 +746,6 @@ const TripActiveScreen = () => {
         </View>
       </Modal>
 
-      {/* Modal imagen ampliada */}
       <Modal
         visible={selectedImage !== null}
         transparent

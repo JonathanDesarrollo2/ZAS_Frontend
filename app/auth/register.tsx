@@ -116,7 +116,7 @@ const RegisterScreen = () => {
         <Animated.View style={{ opacity: fadeAnim }}>
           <View style={styles.inputRow}><Feather name="mail" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" style={styles.input} placeholderTextColor="#9ca3af" /></View>
           <View style={styles.inputRow}><Feather name="user" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Nombre de usuario" value={loginName} onChangeText={setLoginName} style={styles.input} placeholderTextColor="#9ca3af" /></View>
-          <View style={styles.inputRow}><Feather name="edit-2" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Nombre completo (opcional)" value={username} onChangeText={setUsername} style={styles.input} placeholderTextColor="#9ca3af" /></View>
+          <View style={styles.inputRow}><Feather name="edit-2" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Nombre completo " value={username} onChangeText={setUsername} style={styles.input} placeholderTextColor="#9ca3af" /></View>
           <View style={styles.inputRow}><Feather name="lock" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Contraseña" value={password} onChangeText={setPassword} secureTextEntry style={styles.input} placeholderTextColor="#9ca3af" /></View>
           <View style={styles.inputRow}><Feather name="lock" size={20} color="#9ca3af" style={{ marginRight: 12 }} /><TextInput placeholder="Repetir contraseña" value={repass} onChangeText={setRepass} secureTextEntry style={styles.input} placeholderTextColor="#9ca3af" /></View>
 

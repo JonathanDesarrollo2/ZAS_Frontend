@@ -227,9 +227,9 @@ const DriverDocumentationScreen = () => {
         {canEdit && (
           <View style={styles.formSection}>
             <Text style={styles.sectionTitle}>Tus documentos</Text>
-            <FileField label="Cédula de identidad (opcional)" field="cedula" file={files.cedula} onPick={() => pickFile('cedula')} optional />
-            <FileField label="Licencia de conducir (opcional)" field="licencia" file={files.licencia} onPick={() => pickFile('licencia')} optional />
-            <FileField label="Certificado médico vial (opcional)" field="certificado_medico" file={files.certificado_medico} onPick={() => pickFile('certificado_medico')} optional />
+            <FileField label="Cédula de identidad" field="cedula" file={files.cedula} onPick={() => pickFile('cedula')} optional />
+            <FileField label="Licencia de conducir" field="licencia" file={files.licencia} onPick={() => pickFile('licencia')} optional />
+            <FileField label="Certificado médico vial" field="certificado_medico" file={files.certificado_medico} onPick={() => pickFile('certificado_medico')} optional />
 
             <View style={styles.toggleRow}>
               <Text style={styles.toggleLabel}>¿Tienes antecedentes penales?</Text>

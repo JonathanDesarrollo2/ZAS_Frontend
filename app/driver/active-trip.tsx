@@ -8,8 +8,8 @@ import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, router } from 'expo-router';
 import * as Location from 'expo-location';
 import { apiClient } from '../../apis/Client';
-import { connectSocket } from '../socket/socketClient';
-import { verifyTripPayment, markArrived, startTrip, completeTrip } from '../../apis/trips';
+import { connectSocket, getSocket } from '../socket/socketClient';
+import { verifyTripPayment, markArrived, startTrip, driverArrivedDestination, cancelTripByDriver } from '../../apis/trips';
 import { Feather } from '@expo/vector-icons';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
@@ -28,7 +28,7 @@ interface TripData {
   dropoff_address: string;
   price: number;
   status: string;
-  payment_method?: string; // nuevo
+  payment_method?: string;
   passenger?: {
     id?: string;
     username?: string;
@@ -51,11 +51,19 @@ const DriverActiveTripScreen = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // Polling cada 5 segundos
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchTripDetails();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [tripId]);
+
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
     fetchTripDetails();
     getDriverLocation();
-    listenPaymentUpdates();
+    listenSocketEvents();
   }, [tripId]);
 
   useEffect(() => {
@@ -107,11 +115,9 @@ const DriverActiveTripScreen = () => {
         } else {
           setPassengerPic(null);
         }
-      } else {
-        Alert.alert('Error', 'No se pudo cargar el viaje');
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      // Silencioso en polling
     } finally {
       setLoading(false);
     }
@@ -134,12 +140,21 @@ const DriverActiveTripScreen = () => {
     }
   };
 
-  const listenPaymentUpdates = async () => {
+  const listenSocketEvents = async () => {
     try {
       const socket = await connectSocket();
       socket.emit('driver:join');
+      socket.emit('trip:join', tripId);
       socket.on('tripPaymentUpdated', () => {
         fetchTripDetails();
+      });
+      socket.on('tripCompleted', () => {
+        fetchTripDetails();
+      });
+      socket.on('tripCancelled', (data: any) => {
+        Alert.alert('Viaje cancelado', 'El viaje ha sido cancelado.');
+        fetchTripDetails();
+        setTimeout(() => router.replace('/dashboard'), 1000);
       });
     } catch (err) {
       console.log('Socket no disponible');
@@ -175,25 +190,26 @@ const DriverActiveTripScreen = () => {
     }
   };
 
-  const handleCompleteTrip = async () => {
-    Alert.alert('Finalizar viaje', '¿Has llegado al destino?', [
-      { text: 'No' },
-      {
-        text: 'Sí',
-        onPress: async () => {
-          try {
-            await completeTrip(tripId!);
-            Alert.alert('Viaje completado', 'Has llegado al destino');
-            fetchTripDetails();
-          } catch (err: any) {
-            Alert.alert('Error', err.message);
-          }
-        },
-      },
-    ]);
+  const handleArriveDestination = async () => {
+    try {
+      await driverArrivedDestination(tripId!);
+      Alert.alert('Aviso', 'Has llegado al destino. Esperando confirmación del pasajero...');
+      fetchTripDetails();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
   };
 
-  const destinationPos = trip?.status === 'in_progress'
+  const handleCancelTrip = async () => {
+    try {
+      await cancelTripByDriver(tripId!);
+      router.replace('/dashboard');
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    }
+  };
+
+  const destinationPos = trip?.status === 'in_progress' || trip?.status === 'arrived_destination'
     ? `{ lat: ${trip.dropoff_lat}, lng: ${trip.dropoff_lng} }`
     : `{ lat: ${trip?.pickup_lat}, lng: ${trip?.pickup_lng} }`;
 
@@ -229,8 +245,8 @@ const DriverActiveTripScreen = () => {
           destinationMarker = new google.maps.Marker({
             position: destinationPos,
             map: map,
-            icon: ${trip?.status === 'in_progress' ? `'http://maps.google.com/mapfiles/ms/icons/red-dot.png'` : `'${motorcycleIcon}'`},
-            title: ${trip?.status === 'in_progress' ? `'Destino'` : `'Pasajero'`}
+            icon: ${trip?.status === 'in_progress' || trip?.status === 'arrived_destination' ? `'http://maps.google.com/mapfiles/ms/icons/red-dot.png'` : `'${motorcycleIcon}'`},
+            title: ${trip?.status === 'in_progress' || trip?.status === 'arrived_destination' ? `'Destino'` : `'Pasajero'`}
           });
 
           directionsService = new google.maps.DirectionsService();
@@ -337,11 +353,11 @@ const DriverActiveTripScreen = () => {
           </>
         )}
 
-        {/* Botones según estado */}
+        {/* 🔘 BOTONES DE ACCIÓN */}
         {trip.status === 'accepted' && (
           <TouchableOpacity style={styles.arriveBtn} onPress={handleArrive}>
             <Feather name="map-pin" size={18} color="#fff" />
-            <Text style={styles.btnText}> He llegado</Text>
+            <Text style={styles.btnText}> He llegado al origen</Text>
           </TouchableOpacity>
         )}
         {trip.status === 'arrived' && (
@@ -351,13 +367,27 @@ const DriverActiveTripScreen = () => {
           </TouchableOpacity>
         )}
         {trip.status === 'in_progress' && (
-          <TouchableOpacity style={styles.completeBtn} onPress={handleCompleteTrip}>
+          <TouchableOpacity style={styles.completeBtn} onPress={handleArriveDestination}>
             <Feather name="flag" size={18} color="#fff" />
-            <Text style={styles.btnText}> Viaje completado</Text>
+            <Text style={styles.btnText}> He llegado al destino</Text>
           </TouchableOpacity>
+        )}
+        {trip.status === 'arrived_destination' && (
+          <Text style={styles.completedText}>⏳ Esperando confirmación del pasajero...</Text>
         )}
         {trip.status === 'completed' && (
           <Text style={styles.completedText}>✅ Viaje finalizado</Text>
+        )}
+
+        {/* Botón cancelar SIEMPRE (excepto finalizado/cancelado) */}
+        {trip.status === 'accepted' && (
+          <TouchableOpacity
+            style={[styles.completeBtn, { backgroundColor: '#FF5252', marginTop: 8 }]}
+            onPress={handleCancelTrip}
+          >
+            <Feather name="x-circle" size={18} color="#fff" />
+            <Text style={styles.btnText}> Cancelar viaje</Text>
+          </TouchableOpacity>
         )}
 
         {/* Chat */}
@@ -431,23 +461,9 @@ const styles = StyleSheet.create({
   completedText: { marginTop: 10, color: '#4CAF50', fontWeight: '600' },
   chatButton: { backgroundColor: '#00C9A7', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   chatButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCloseButton: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    zIndex: 10,
-    padding: 10,
-  },
-  modalImage: {
-    width: '100%',
-    height: '100%',
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
+  modalCloseButton: { position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 10 },
+  modalImage: { width: '100%', height: '100%' },
 });
 
 export default DriverActiveTripScreen;

@@ -11,10 +11,9 @@
 
 
 
-/*
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -24,6 +23,14 @@ Notifications.setNotificationHandler({
     shouldShowBanner: true,
     shouldShowList: true,
   }),
+});
+
+// Listener para abrir enlaces al tocar la notificación
+Notifications.addNotificationResponseReceivedListener(response => {
+  const data = response.notification.request.content.data;
+  if (data && typeof data.link === 'string') {
+    Linking.openURL(data.link);
+  }
 });
 
 export async function getFCMToken(): Promise<string | null> {
@@ -62,11 +69,15 @@ export async function getFCMToken(): Promise<string | null> {
 
   return tokenResult.data;
 }
-*/
+
 // ========== BLOQUE TEMPORAL PARA EXPO GO ==========
 // Devuelve un token falso para que el resto de la app no falle.
 // Cuando compiles para producción, comenta este export y descomenta el bloque de arriba.
 
+
+
+/*
 export async function getFCMToken(): Promise<string | null> {
   return 'ExpoGoFakeToken';
 }
+  */

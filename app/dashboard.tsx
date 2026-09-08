@@ -1,14 +1,8 @@
+// app/dashboard.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Animated,
-  Image,
-  Dimensions,
-  Alert,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Image, Dimensions,
+  Alert, Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -18,18 +12,19 @@ import { connectSocket } from './socket/socketClient';
 import ToastNotification from '../presentation/components/shared/toastNotification';
 import { apiClient } from '../apis/Client';
 import { getActiveTrip } from '../apis/trips';
+import { getAppConfig } from '../apis/appConfig';
 import ProfileAvatar from '../components/ProfileAvatar';
+import UpdateRequiredModal from '../components/updateRequiredModal';
 
 type FeatherIconName =
   | 'search' | 'plus-circle' | 'list' | 'truck' | 'toggle-right'
   | 'chevron-right' | 'bell' | 'log-out' | 'menu'
-  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'dollar-sign' | 'mail'
+  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'mail'
   | 'alert-triangle' | 'clock' | 'navigation' | 'package' | 'map-pin';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.75;
 
-// Logo sin contenedor cuadrado
 const LogoIcon = () => (
   <Image
     source={require('../assets/images/logo.png')}
@@ -78,6 +73,9 @@ const DashboardScreen = () => {
   const isKYC = user?.isKYCVerified;
   const isEmailVerified = user?.isEmailVerified;
   const isDriver = user?.nivel === 2;
+
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [updateUrl, setUpdateUrl] = useState('');
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -133,19 +131,49 @@ const DashboardScreen = () => {
     }
   };
 
+  // ✅ Configurar socket: balance y notificaciones
   useEffect(() => {
     const setupSocket = async () => {
       const socket = await connectSocket();
       const handleBalanceUpdate = () => {
         checkSession();
       };
-      socket.on('balanceUpdated', handleBalanceUpdate);
+      const handleAdminNotification = (data: any) => {
+        // Si quieres abrir el enlace directamente al recibir la notificación,
+        // descomenta la siguiente línea:
+        // if (data?.link) Linking.openURL(data.link);
+        // De lo contrario, la notificación solo se guardará en el historial local.
+      };
+      socket.on('adminNotification', handleAdminNotification);
+      socket.on('adminNotification', handleAdminNotification);
       return () => {
         socket.off('balanceUpdated', handleBalanceUpdate);
+        socket.off('adminNotification', handleAdminNotification);
       };
     };
     setupSocket();
   }, []);
+
+  // ✅ Verificar versión mínima
+      useEffect(() => {
+        const checkVersion = async () => {
+          try {
+            const config = await getAppConfig();
+            const packageJson = require('../package.json');
+            const currentVersion = packageJson.version;
+            const necesitaActualizar = config.min_version && compareVersions(currentVersion, config.min_version) < 0;
+            if (necesitaActualizar) {
+              setUpdateUrl(config.update_url || '');
+              setUpdateModalVisible(true);
+            } else {
+              setUpdateModalVisible(false); // 👈 Esto asegura que se oculte
+            }
+          } catch (e) {
+            // Silencioso
+          }
+        };
+        checkVersion();
+      }, []);
 
   useEffect(() => {
     if (!user || isLoading) return;
@@ -376,18 +404,12 @@ const DashboardScreen = () => {
       </Animated.View>
 
       <Animated.View style={[styles.mainContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-        {/* Barra superior: menú, logo a la izquierda, luego espacio flexible y saldo/notificaciones */}
         <View style={styles.topBar}>
           <TouchableOpacity onPress={openMenu} style={{ marginRight: 12 }}>
             <Feather name="menu" size={24} color="#1F2937" />
           </TouchableOpacity>
           <LogoIcon />
           <View style={{ flex: 1 }} />
-          <TouchableOpacity onPress={() => router.push('/add-balance')}>
-            <Text style={styles.balanceMini}>
-              ${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}
-            </Text>
-          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/notifications')} style={{ marginLeft: 16 }}>
             <Feather name="bell" size={24} color="#1F2937" />
           </TouchableOpacity>
@@ -421,21 +443,6 @@ const DashboardScreen = () => {
               </View>
             )}
           </View>
-
-          <TouchableOpacity
-            style={styles.balanceCard}
-            onPress={() => router.push('/add-balance')}
-            activeOpacity={0.8}
-          >
-            <Feather name="dollar-sign" size={20} color="#00C9A7" style={{ marginRight: 10 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.balanceLabel}>Saldo disponible</Text>
-              <Text style={styles.balanceAmount}>
-                ${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}
-              </Text>
-            </View>
-            <Feather name="plus-circle" size={22} color="#00C9A7" />
-          </TouchableOpacity>
 
           <View style={styles.servicesContainer}>
             {isDriver ? driverModules : passengerModules}
@@ -490,15 +497,31 @@ const DashboardScreen = () => {
           </View>
         </ScrollView>
       </Animated.View>
+      <UpdateRequiredModal
+        visible={updateModalVisible}
+        updateUrl={updateUrl}
+      />
     </View>
   );
 };
+
+function compareVersions(a: string, b: string): number {
+  const normalize = (v: string) => v.replace(/^v/i, '').split('.').map(Number);
+  const pa = normalize(a);
+  const pb = normalize(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   mainContainer: { flex: 1, paddingHorizontal: 20, paddingTop: 60 },
   topBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
-  // Eliminados logoContainer y pinDot
   logoImage: {
     width: 70,
     height: 70,
@@ -521,23 +544,6 @@ const styles = StyleSheet.create({
   },
   compactWarningText: { color: '#E65100', fontSize: 13, flex: 1 },
   compactLink: { color: '#3c87f7', fontWeight: '600', fontSize: 13 },
-  balanceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#E5F5F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  balanceLabel: { color: '#6B7280', fontSize: 14 },
-  balanceAmount: { color: '#1F2937', fontSize: 22, fontWeight: '700', marginTop: 4 },
   servicesContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
@@ -634,16 +640,6 @@ const styles = StyleSheet.create({
   },
   menuItemText: { fontSize: 16, fontWeight: '500', color: '#1F2937' },
   menuDivider: { height: 1, backgroundColor: '#E5F5F0', marginVertical: 8 },
-  balanceMini: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#00C9A7',
-    backgroundColor: '#E6FFFA',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
   tripsContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,

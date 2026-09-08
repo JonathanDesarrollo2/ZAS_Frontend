@@ -1,8 +1,11 @@
 import io, { Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
+import * as Location from 'expo-location';
 
 let socket: Socket | null = null;
+let locationInterval: ReturnType<typeof setInterval> | null = null;
+
 const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:8080';
 
 const saveNotification = async (notification: {
@@ -10,16 +13,54 @@ const saveNotification = async (notification: {
   body: string;
   type: string;
   createdAt: string;
+  link?: string;
 }) => {
   try {
     const raw = await AsyncStorage.getItem('notifications');
     const list = raw ? JSON.parse(raw) : [];
     list.unshift(notification);
-    // mantener solo las últimas 50
     const trimmed = list.slice(0, 50);
     await AsyncStorage.setItem('notifications', JSON.stringify(trimmed));
   } catch (error) {
     console.log('Error guardando notificación', error);
+  }
+};
+
+// Función para iniciar envío de ubicación del conductor
+const startDriverLocationUpdates = async (socket: Socket) => {
+  // Verificar si el usuario es conductor (nivel 2)
+  const nivel = await AsyncStorage.getItem('userNivel'); // Asegúrate de guardar esto al iniciar sesión
+  if (Number(nivel) !== 2) return;
+
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return;
+
+    const sendLocation = async () => {
+      try {
+        const location = await Location.getCurrentPositionAsync({});
+        socket.emit('driver:location', {
+          tripId: 'global',
+          lat: location.coords.latitude,
+          lng: location.coords.longitude,
+        });
+      } catch (err) {
+        // Silencioso
+      }
+    };
+
+    await sendLocation();
+
+    locationInterval = setInterval(sendLocation, 10000);
+  } catch (err) {
+    // Silencioso
+  }
+};
+
+const stopDriverLocationUpdates = () => {
+  if (locationInterval) {
+    clearInterval(locationInterval);
+    locationInterval = null;
   }
 };
 
@@ -36,10 +77,12 @@ export const connectSocket = async (): Promise<Socket> => {
 
   socket.on('connect', () => {
     console.log('🔌 Socket conectado:', socket?.id);
+    startDriverLocationUpdates(socket!);
   });
 
   socket.on('disconnect', (reason) => {
     console.log('❌ Socket desconectado:', reason);
+    stopDriverLocationUpdates();
   });
 
   socket.on('connect_error', (error) => {
@@ -47,12 +90,12 @@ export const connectSocket = async (): Promise<Socket> => {
   });
 
   // Admin push notification
-  socket.on('adminNotification', (data: { title: string; body: string }) => {
-    Alert.alert(data.title, data.body);
+  socket.on('adminNotification', (data: { title: string; body: string; link?: string }) => {
     saveNotification({
       title: data.title,
       body: data.body,
       type: 'admin',
+      link: data.link,
       createdAt: new Date().toISOString(),
     });
   });

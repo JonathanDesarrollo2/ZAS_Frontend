@@ -2,8 +2,8 @@
   "expo": {
     "name": "ZAS",
     "slug": "Zas_Frontend",
-    "version": "v1.0.1",
-    "orientation": "portrait",
+    "version": "1.0.7",
+    "orientation": "default",
     "icon": "./assets/images/logo.png",
     "scheme": "zasfrontend",
     "userInterfaceStyle": "automatic",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.zas.frontend",
-      "versionCode": 12,
+      "versionCode": 1004,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#98FFD9",
@@ -23,7 +23,6 @@
         "backgroundImage": "./assets/images/logo.png",
         "monochromeImage": "./assets/images/logo.png"
       },
-      "predictiveBackGestureEnabled": false,
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE"
@@ -49,7 +48,16 @@
         }
       ],
       "expo-font",
-      "expo-location"
+      "expo-location",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

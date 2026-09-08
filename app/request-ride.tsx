@@ -12,7 +12,7 @@ import { createTrip, estimatePrice, getActiveTrip } from '../apis/trips';
 import { useAutocomplete } from '../presentation/hooks/use-autocomplete';
 import { reverseGeocode } from '../utils/geocoding';
 import MapSelector from '../presentation/components/shared/mapSelector';
-import { useAuth } from '../presentation/store/AuthStore';
+import { apiClient } from '../apis/Client';
 
 // ---------- Toast ----------
 const Toast = ({ message, type = 'error', visible, onHide }: { message: string; type?: 'error' | 'success'; visible: boolean; onHide: () => void }) => {
@@ -78,13 +78,12 @@ const SuggestionsModal = ({
 };
 
 const RequestRideScreen = () => {
-  const { user } = useAuth();
-
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationLoaded, setLocationLoaded] = useState(false);
 
-  const originAuto = useAutocomplete(currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined);
-  const destAuto = useAutocomplete(currentLocation ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined);
+  // Autocompletado sin restricción de ubicación
+  const originAuto = useAutocomplete();
+  const destAuto = useAutocomplete();
 
   const [origin, setOrigin] = useState('');
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -94,7 +93,7 @@ const RequestRideScreen = () => {
   const [selectedVehicle, setSelectedVehicle] = useState('moto');
   const [loading, setLoading] = useState(false);
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'app'>('cash');
+  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [isCustomPrice, setIsCustomPrice] = useState(false);
   const [customPrice, setCustomPrice] = useState('');
 
@@ -114,17 +113,40 @@ const RequestRideScreen = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => { Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start(); }, []);
 
+  // Obtener tasa de cambio
+  useEffect(() => {
+    const fetchExchangeRate = async () => {
+      try {
+        const res = await apiClient<{ result: boolean; content: { rate: number } }>('/public/exchange-rate');
+        if (res.result && res.content?.rate) {
+          setExchangeRate(res.content.rate);
+        }
+      } catch (err) { /* Silencioso */ }
+    };
+    fetchExchangeRate();
+  }, []);
+
+  // Obtener ubicación actual y usarla como origen por defecto
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') { showToast('Permiso de ubicación denegado'); return; }
-      let location = await Location.getCurrentPositionAsync({});
-      const loc = { latitude: location.coords.latitude, longitude: location.coords.longitude };
-      setCurrentLocation(loc);
-      setOriginCoords({ lat: loc.latitude, lng: loc.longitude });
-      const addr = await reverseGeocode(loc.latitude, loc.longitude);
-      setOrigin(addr);
-      setLocationLoaded(true);
+      if (status !== 'granted') {
+        showToast('Permiso de ubicación denegado');
+        setLocationLoaded(true); // para no bloquear la pantalla
+        return;
+      }
+      try {
+        let location = await Location.getCurrentPositionAsync({});
+        const loc = { latitude: location.coords.latitude, longitude: location.coords.longitude };
+        setCurrentLocation(loc);
+        setOriginCoords({ lat: loc.latitude, lng: loc.longitude });
+        const addr = await reverseGeocode(loc.latitude, loc.longitude);
+        setOrigin(addr);
+      } catch (e) {
+        showToast('No se pudo obtener tu ubicación');
+      } finally {
+        setLocationLoaded(true);
+      }
     })();
   }, []);
 
@@ -177,23 +199,23 @@ const RequestRideScreen = () => {
     setMapSelectorVisible(false);
   };
 
+  // Cálculo del precio estimado usando las coordenadas del origen seleccionado
   useEffect(() => {
-    if (destCoords && currentLocation) {
-      estimatePrice(currentLocation.latitude, currentLocation.longitude, destCoords.lat, destCoords.lng)
+    if (destCoords && originCoords) {
+      estimatePrice(originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng)
         .then(setEstimatedPrice).catch(() => setEstimatedPrice(null));
     }
-  }, [destCoords, selectedVehicle]);
+  }, [destCoords, originCoords, selectedVehicle]);
 
   const finalPrice = isCustomPrice && customPrice ? parseFloat(customPrice) : (estimatedPrice || 0);
-  const canPayWithApp = (user?.balance || 0) >= finalPrice;
 
   const handleRequestRide = async () => {
     if (!origin.trim() || !destination.trim()) { showToast('Completa origen y destino'); return; }
+    if (!originCoords) { showToast('Selecciona un origen válido'); return; }
     if (!destCoords) { showToast('Selecciona un destino válido'); return; }
     if (selectedVehicle !== 'moto') { showToast('Solo moto disponible'); return; }
-    if (paymentMethod === 'app' && !canPayWithApp) { showToast('Saldo insuficiente'); return; }
 
-    // ✅ Verificar si ya hay un viaje activo antes de crear otro
+    // Verificar si ya hay un viaje activo antes de crear otro
     try {
       const activeRes = await getActiveTrip();
       if (activeRes.result && activeRes.content) {
@@ -210,33 +232,42 @@ const RequestRideScreen = () => {
         });
         return;
       }
-    } catch (err) {
-      // Silencioso, continuar con la creación
-    }
+    } catch (err) { /* Silencioso */ }
 
     setLoading(true);
     try {
       const payload = {
-        pickup_lat: originCoords?.lat || currentLocation!.latitude,
-        pickup_lng: originCoords?.lng || currentLocation!.longitude,
+        pickup_lat: originCoords.lat,
+        pickup_lng: originCoords.lng,
         pickup_address: origin,
         dropoff_lat: destCoords.lat,
         dropoff_lng: destCoords.lng,
         dropoff_address: destination,
         vehicle_type: selectedVehicle,
         trip_type: 'ride' as const,
-        price: finalPrice > 0 ? finalPrice : undefined,
-        payment_method: paymentMethod,
+        price: isCustomPrice && finalPrice > 0 ? finalPrice : undefined,
+        payment_method: 'cash',
       };
       const response = await createTrip(payload as any);
       if (response.result) {
         showToast('Viaje solicitado', 'success');
         setTimeout(() => router.push({ pathname: '/trip-waiting', params: { tripId: response.content?.id } }), 500);
       } else {
-        showToast(response.error?.[0] || 'No se pudo solicitar el viaje');
+        const errorMsg = response.error?.[0] || 'No se pudo solicitar el viaje';
+        if (errorMsg.toLowerCase().includes('zona')) {
+          Alert.alert('Zona no disponible', 'El origen seleccionado está fuera de nuestra área de servicio.');
+        } else {
+          showToast(errorMsg);
+        }
       }
-    } catch (err: any) { showToast(err.message); }
-    finally { setLoading(false); }
+    } catch (err: any) {
+      const msg = err.message || 'Error al solicitar viaje';
+      if (msg.toLowerCase().includes('zona')) {
+        Alert.alert('Zona no disponible', 'El origen seleccionado está fuera de nuestra área de servicio.');
+      } else {
+        showToast(msg);
+      }
+    } finally { setLoading(false); }
   };
 
   if (!locationLoaded) {
@@ -268,8 +299,17 @@ const RequestRideScreen = () => {
                   originAuto.setQuery(origin);
                   openSuggestions('origin');
                 }}
-                onChangeText={(t) => { originAuto.fetchSuggestions(t); }}
-                onBlur={() => originAuto.clearSuggestions()}
+                onChangeText={(t) => {
+                  originAuto.setQuery(t);
+                  originAuto.fetchSuggestions(t);
+                }}
+                onBlur={() => {
+                  if (!originAuto.suggestions.length) {
+                    // Si no hay sugerencias, conservar el texto como dirección (sin coordenadas)
+                    setOrigin(originAuto.query || origin);
+                  }
+                  originAuto.clearSuggestions();
+                }}
                 placeholderTextColor="#9CA3AF"
               />
               <TouchableOpacity onPress={() => openMapForField('origin')}>
@@ -289,8 +329,16 @@ const RequestRideScreen = () => {
                   destAuto.setQuery(destination);
                   openSuggestions('dest');
                 }}
-                onChangeText={(t) => { destAuto.fetchSuggestions(t); }}
-                onBlur={() => destAuto.clearSuggestions()}
+                onChangeText={(t) => {
+                  destAuto.setQuery(t);
+                  destAuto.fetchSuggestions(t);
+                }}
+                onBlur={() => {
+                  if (!destAuto.suggestions.length) {
+                    setDestination(destAuto.query || destination);
+                  }
+                  destAuto.clearSuggestions();
+                }}
                 placeholderTextColor="#9CA3AF"
               />
               <TouchableOpacity onPress={() => openMapForField('dest')}>
@@ -323,6 +371,11 @@ const RequestRideScreen = () => {
                 <Text style={styles.priceText}>Calculando precio...</Text>
               )}
             </View>
+            {estimatedPrice !== null && exchangeRate && (
+              <Text style={styles.vesPrice}>
+                ≈ Bs. {(estimatedPrice * exchangeRate).toFixed(2)}
+              </Text>
+            )}
             {!isCustomPrice && estimatedPrice && (
               <TouchableOpacity
                 style={styles.adjustButton}
@@ -347,36 +400,6 @@ const RequestRideScreen = () => {
                   <Feather name="x" size={18} color="#fff" />
                 </TouchableOpacity>
               </View>
-            )}
-
-            {/* Saldo */}
-            <View style={styles.balanceRow}>
-              <Feather name="dollar-sign" size={18} color="#00C9A7" style={{ marginRight: 8 }} />
-              <Text style={styles.balanceText}>
-                Saldo: ${user?.balance != null ? Number(user.balance).toFixed(2) : '0.00'}
-              </Text>
-            </View>
-
-            {/* Método de pago */}
-            <Text style={styles.sectionTitle}>Método de pago</Text>
-            <View style={styles.paymentRow}>
-              <TouchableOpacity
-                style={[styles.paymentOption, paymentMethod === 'cash' && styles.paymentOptionSelected]}
-                onPress={() => setPaymentMethod('cash')}
-              >
-                <Feather name="user" size={18} color={paymentMethod === 'cash' ? '#fff' : '#00C9A7'} />
-                <Text style={[styles.paymentText, paymentMethod === 'cash' && { color: '#fff' }]}>Pago al conductor</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.paymentOption, paymentMethod === 'app' && styles.paymentOptionSelected]}
-                onPress={() => setPaymentMethod('app')}
-              >
-                <Feather name="smartphone" size={18} color={paymentMethod === 'app' ? '#fff' : '#00C9A7'} />
-                <Text style={[styles.paymentText, paymentMethod === 'app' && { color: '#fff' }]}>App</Text>
-              </TouchableOpacity>
-            </View>
-            {!canPayWithApp && paymentMethod === 'app' && (
-              <Text style={styles.errorText}>Saldo insuficiente para pagar con la app</Text>
             )}
 
             {/* Botón solicitar */}
@@ -462,27 +485,21 @@ const styles = StyleSheet.create({
   vehicleSelected: { backgroundColor: '#00C9A7', borderColor: '#00C9A7' },
   vehicleDisabled: { backgroundColor: '#F5F5F5', borderColor: '#E0E0E0' },
   vehicleLabel: { fontSize: 16, fontWeight: '600', color: '#1F2937' },
-  priceRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  priceRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   priceText: { fontSize: 17, fontWeight: '600', color: '#1F2937' },
+  vesPrice: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 4,
+    marginLeft: 24,
+    marginBottom: 12,
+  },
   adjustButton: { alignSelf: 'flex-end', marginBottom: 16 },
   adjustButtonText: { color: '#00C9A7', fontWeight: '600', fontSize: 15, textDecorationLine: 'underline' },
   customPriceRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 8 },
   customPriceInput: { flex: 1, backgroundColor: '#F5F7FA', borderRadius: 12, paddingHorizontal: 14, height: 44, fontSize: 16, borderWidth: 1, borderColor: '#00C9A7' },
   confirmPriceButton: { backgroundColor: '#00C9A7', borderRadius: 12, width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   cancelPriceButton: { backgroundColor: '#EF4444', borderRadius: 12, width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  balanceRow: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12,
-    marginBottom: 20, borderWidth: 1, borderColor: '#E5E7EB',
-  },
-  balanceText: { fontSize: 16, fontWeight: '600', color: '#1F2937' },
-  paymentRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  paymentOption: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E5E7EB', gap: 8,
-  },
-  paymentOptionSelected: { backgroundColor: '#00C9A7', borderColor: '#00C9A7' },
-  paymentText: { fontSize: 16, fontWeight: '600', color: '#1F2937' },
-  errorText: { color: '#EF4444', fontSize: 14, marginTop: -12, marginBottom: 12, marginLeft: 4 },
   requestBtn: {
     backgroundColor: '#00C9A7', borderRadius: 16, height: 56, flexDirection: 'row',
     justifyContent: 'center', alignItems: 'center', shadowColor: '#00C9A7',

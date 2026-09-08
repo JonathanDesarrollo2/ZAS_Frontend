@@ -25,9 +25,11 @@ export const createTrip = async (payload: CreateTripPayload): Promise<any> => {
 export const getAvailableTrips = async (lat: number, lng: number, radius: number = 5): Promise<any> => {
   return apiClient(`/private/trips/available?lat=${lat}&lng=${lng}&radius=${radius}`);
 };
+
 export const cancelTrip = async (tripId: string) => {
   return apiClient(`/private/trips/${tripId}/cancel`, { method: 'PUT' });
 };
+
 export const confirmTripPayment = async (tripId: string, data: {
   payment_reference: string;
   payer_bank: string;
@@ -58,9 +60,11 @@ export const startTrip = async (tripId: string) => {
 export const completeTrip = async (tripId: string) => {
   return apiClient(`/private/trips/${tripId}/complete`, { method: 'PUT' });
 };
+
 export const getActiveTrip = async (): Promise<any> => {
   return apiClient('/private/trips/active');
 };
+
 export const estimatePrice = async (
   pickup_lat: number, pickup_lng: number,
   dropoff_lat: number, dropoff_lng: number
@@ -69,6 +73,16 @@ export const estimatePrice = async (
     `/private/trips/estimate-price?pickup_lat=${pickup_lat}&pickup_lng=${pickup_lng}&dropoff_lat=${dropoff_lat}&dropoff_lng=${dropoff_lng}`
   );
   return res.content.price;
+};
 
-  
+export const driverArrivedDestination = async (tripId: string) => {
+  return apiClient(`/private/trips/${tripId}/arrived-destination`, {
+    method: 'POST',
+  });
+};
+
+export const cancelTripByDriver = async (tripId: string) => {
+  return apiClient(`/private/trips/${tripId}/cancel-by-driver`, {
+    method: 'PUT',
+  });
 };

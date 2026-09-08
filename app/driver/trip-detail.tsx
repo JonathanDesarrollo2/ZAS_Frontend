@@ -1,12 +1,12 @@
 // app/driver/trip-detail.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Animated, Alert
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Animated, Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import * as Location from 'expo-location';             // ← NUEVA IMPORTACIÓN
+import * as Location from 'expo-location';
 import { apiClient } from '../../apis/Client';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
@@ -55,24 +55,25 @@ const TripDetailScreen = () => {
     }
   };
 
-  // NUEVO handleAccept con ubicación real
   const handleAccept = async () => {
     setAccepting(true);
     try {
-      // 1. Pedir permiso de ubicación
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permiso de ubicación', 'Se necesita la ubicación para aceptar el viaje.');
-        setAccepting(false);
-        return;
+      let location = await Location.getLastKnownPositionAsync();
+      if (!location) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permiso de ubicación', 'Se necesita la ubicación para aceptar el viaje.');
+          setAccepting(false);
+          return;
+        }
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
       }
 
-      // 2. Obtener la ubicación actual del conductor
-      const location = await Location.getCurrentPositionAsync({});
       const driverLat = location.coords.latitude;
       const driverLng = location.coords.longitude;
 
-      // 3. Enviar al backend junto con la aceptación
       const response = await apiClient<{ result: boolean }>(`/private/trips/${tripId}/accept`, {
         method: 'POST',
         body: JSON.stringify({ driverLat, driverLng }),
@@ -90,7 +91,6 @@ const TripDetailScreen = () => {
     }
   };
 
-  // Mapa con ruta (sin cambios)
   const mapHTML = trip ? `
     <!DOCTYPE html>
     <html>
@@ -149,16 +149,7 @@ const TripDetailScreen = () => {
     );
   }
 
-  if (!trip) {
-    return (
-      <View style={styles.centered}>
-        <Text style={{ color: '#6B7280' }}>Viaje no disponible</Text>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: '#00C9A7' }}>Volver</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  if (!trip) return null;
 
   return (
     <View style={styles.screen}>

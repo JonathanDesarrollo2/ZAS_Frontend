@@ -1,27 +1,20 @@
 // app/trip-waiting.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  Animated,
-  StyleSheet,
-  AppState,
+  View, Text, TouchableOpacity, Animated, StyleSheet, AppState, BackHandler, Alert,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { connectSocket, getSocket } from './socket/socketClient';
 import { apiClient } from '../apis/Client';
+import { cancelTrip } from '../apis/trips';
 
 const TripWaitingScreen = () => {
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const [cancelling, setCancelling] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  // Refs para controlar intervalos y listeners
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const socketRef = useRef<any>(null);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
@@ -32,14 +25,38 @@ const TripWaitingScreen = () => {
       ])
     ).start();
 
-    // Configurar socket y listeners
     setupSocketAndPolling();
 
-    // Listener para AppState: cuando vuelve a primer plano, verificar viaje activo
+    // ✅ Cancelar viaje si el pasajero retrocede o cierra la app
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      Alert.alert(
+        'Cancelar viaje',
+        '¿Deseas cancelar la búsqueda?',
+        [
+          { text: 'Permanecer', style: 'cancel' },
+          { text: 'Cancelar viaje', onPress: async () => {
+              setCancelling(true);
+              try {
+                await cancelTrip(tripId!);
+                router.replace('/dashboard');
+              } catch (err) {
+                Alert.alert('Error', 'No se pudo cancelar el viaje');
+                setCancelling(false);
+              }
+            }
+          },
+        ]
+      );
+      return true;
+    });
+
     const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // Opcional: cancelar automáticamente si se va a segundo plano
+        // cancelTrip(tripId!).catch(() => {});
+      }
       if (nextAppState === 'active') {
         checkActiveTrip();
-        // También re-emitir join al socket por si se perdió
         const socket = getSocket();
         if (socket && socket.connected) {
           socket.emit('trip:join', tripId);
@@ -48,6 +65,7 @@ const TripWaitingScreen = () => {
     });
 
     return () => {
+      backHandler.remove();
       appStateSubscription.remove();
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       const socket = getSocket();
@@ -58,31 +76,22 @@ const TripWaitingScreen = () => {
   const setupSocketAndPolling = async () => {
     try {
       const socket = await connectSocket();
-      socketRef.current = socket;
-
-      // Al conectar (o reconectar), unirse a la sala
-      const joinTrip = () => {
-        socket.emit('trip:join', tripId);
-      };
+      const joinTrip = () => socket.emit('trip:join', tripId);
       socket.on('connect', joinTrip);
-      joinTrip(); // por si ya está conectado
+      joinTrip();
 
-      // Escuchar aceptación
       socket.on('trip:accepted', (data: any) => {
-        console.log('🎉 Recibido trip:accepted', data);
         navigateToActiveTrip(data);
       });
 
-      // Iniciar polling cada 5 segundos como respaldo
       pollIntervalRef.current = setInterval(() => {
         checkActiveTrip();
-      }, 1000);
+      }, 1500);
     } catch (error) {
       console.error('Error al conectar socket:', error);
-      // Aun sin socket, iniciamos polling
       pollIntervalRef.current = setInterval(() => {
         checkActiveTrip();
-      }, 1000);
+      }, 1500);
     }
   };
 
@@ -92,13 +101,21 @@ const TripWaitingScreen = () => {
         '/private/trips/active'
       );
       if (res.result && res.content) {
-        // Existe un viaje activo: redirigir a trip-active
         const trip = res.content;
-        navigateToActiveTrip({
-          driverId: trip.driver_id,
-          driverName: trip.driver?.username || trip.driver?.userlogin || 'Conductor',
-          vehicle: trip.vehicle_type || 'Moto',
-        });
+        if (trip.status === 'accepted' || trip.status === 'arrived' || trip.status === 'in_progress' || trip.status === 'arrived_destination') {
+          navigateToActiveTrip({
+            driver: {
+              id: trip.driver_id,
+              name: trip.driver?.username || trip.driver?.userlogin || 'Conductor',
+              vehicle: trip.vehicle_type || 'Moto',
+              location: {
+                lat: trip.driver?.current_lat || 0,
+                lng: trip.driver?.current_lng || 0,
+              },
+              publicInfoUrl: `/api/private/driver-public/${trip.driver_id}`,
+            },
+          });
+        }
       }
     } catch (err) {
       // Silencioso
@@ -106,22 +123,30 @@ const TripWaitingScreen = () => {
   };
 
   const navigateToActiveTrip = (data: any) => {
+    const driverInfo = data.driver || {};
     router.replace({
       pathname: '/trip-active',
       params: {
         tripId,
-        driverId: data.driverId,
-        driverName: data.driverName,
-        vehicle: data.vehicle,
-        driverLat: data.driverLocation?.lat || data.driverLat || 0,
-        driverLng: data.driverLocation?.lng || data.driverLng || 0,
+        driverId: driverInfo.id || data.driverId,
+        driverName: driverInfo.name || data.driverName,
+        vehicle: driverInfo.vehicle || data.vehicle,
+        driverLat: driverInfo.location?.lat ?? data.driverLocation?.lat ?? 0,
+        driverLng: driverInfo.location?.lng ?? data.driverLocation?.lng ?? 0,
       },
     });
   };
 
   const handleCancel = async () => {
+    if (cancelling) return;
     setCancelling(true);
-    router.back();
+    try {
+      await cancelTrip(tripId!);
+      router.replace('/dashboard');
+    } catch (err) {
+      Alert.alert('Error', 'No se pudo cancelar el viaje');
+      setCancelling(false);
+    }
   };
 
   return (
