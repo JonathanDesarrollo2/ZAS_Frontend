@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.zas.frontend",
-      "versionCode": 1004,
+      "versionCode": 1005,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#98FFD9",
