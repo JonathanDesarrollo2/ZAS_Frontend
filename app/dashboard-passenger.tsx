@@ -5,10 +5,10 @@ import {
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../presentation/store/AuthStore';
-import ToastNotification from '../presentation/components/shared/toastNotification';
 import LoadingOverlay from '../presentation/components/shared/LoadingOverlay';
 import { connectSocket } from './socket/socketClient';
 import ProfileAvatar from '../components/ProfileAvatar';
+import ToastNotification from '../presentation/components/shared/toastNotification';
 
 type FeatherIconName =
   | 'navigation' | 'package' | 'map-pin' | 'chevron-right' | 'bell' | 'log-out' | 'menu'

@@ -17,6 +17,7 @@ import {
 } from '../../apis/Verification';
 import { getFCMToken } from '../../services/notifications';
 import { getToken } from '../../apis/Client';
+import { connectSocket } from '../../app/socket/socketClient'; // ← nuevo import
 
 interface User {
   id: string;
@@ -27,7 +28,7 @@ interface User {
   isEmailVerified: boolean;
   isKYCVerified: boolean;
   profile_pic_url?: string | null;
-  profile_pic_updated_at?: Date | string | null;   // ← cambiado a Date | string | null
+  profile_pic_updated_at?: Date | string | null;
 }
 
 interface AuthState {
@@ -94,6 +95,8 @@ export const useAuth = create<AuthState>((set, get) => ({
         isLoading: false,
       });
 
+      await AsyncStorage.setItem('userNivel', String(userData.nivel));
+      connectSocket().catch(() => {}); // ← conectar socket globalmente
       get().updatePushToken();
     } catch (error) {
       await AsyncStorage.removeItem('authToken');
@@ -130,6 +133,8 @@ export const useAuth = create<AuthState>((set, get) => ({
         isLoading: false,
       });
 
+      await AsyncStorage.setItem('userNivel', String(userData.nivel));
+      connectSocket().catch(() => {}); // ← conectar socket globalmente
       get().updatePushToken();
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
@@ -166,12 +171,12 @@ export const useAuth = create<AuthState>((set, get) => ({
           },
           isLoading: false,
         });
+
+        await AsyncStorage.setItem('userNivel', String(userData.nivel));
+        connectSocket().catch(() => {}); // ← conectar socket globalmente
+        get().updatePushToken();
       } else {
         set({ isLoading: false });
-      }
-
-      if (get().isAuthenticated) {
-        get().updatePushToken();
       }
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
@@ -219,6 +224,9 @@ export const useAuth = create<AuthState>((set, get) => ({
         },
         isLoading: false,
       });
+
+      await AsyncStorage.setItem('userNivel', String(userData.nivel));
+      connectSocket().catch(() => {}); // ← conectar socket globalmente
     } catch (error: any) {
       await AsyncStorage.removeItem('authToken');
       set({ isAuthenticated: false, user: null, isLoading: false });

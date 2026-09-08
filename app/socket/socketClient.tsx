@@ -26,10 +26,8 @@ const saveNotification = async (notification: {
   }
 };
 
-// Función para iniciar envío de ubicación del conductor
 const startDriverLocationUpdates = async (socket: Socket) => {
-  // Verificar si el usuario es conductor (nivel 2)
-  const nivel = await AsyncStorage.getItem('userNivel'); // Asegúrate de guardar esto al iniciar sesión
+  const nivel = await AsyncStorage.getItem('userNivel');
   if (Number(nivel) !== 2) return;
 
   try {
@@ -38,20 +36,28 @@ const startDriverLocationUpdates = async (socket: Socket) => {
 
     const sendLocation = async () => {
       try {
-        const location = await Location.getCurrentPositionAsync({});
-        socket.emit('driver:location', {
-          tripId: 'global',
-          lat: location.coords.latitude,
-          lng: location.coords.longitude,
-        });
+        // Usar última ubicación conocida para respuesta inmediata
+        let location = await Location.getLastKnownPositionAsync();
+        if (!location) {
+          location = await Location.getCurrentPositionAsync({});
+        }
+        if (location) {
+          socket.emit('driver:location', {
+            tripId: 'global',
+            lat: location.coords.latitude,
+            lng: location.coords.longitude,
+          });
+        }
       } catch (err) {
         // Silencioso
       }
     };
 
+    // Enviar inmediatamente al conectar
     await sendLocation();
 
-    locationInterval = setInterval(sendLocation, 10000);
+    // Luego cada 5 segundos
+    locationInterval = setInterval(sendLocation, 5000);
   } catch (err) {
     // Silencioso
   }
@@ -89,7 +95,6 @@ export const connectSocket = async (): Promise<Socket> => {
     console.error('Error de conexión socket:', error.message);
   });
 
-  // Admin push notification
   socket.on('adminNotification', (data: { title: string; body: string; link?: string }) => {
     saveNotification({
       title: data.title,
@@ -100,7 +105,6 @@ export const connectSocket = async (): Promise<Socket> => {
     });
   });
 
-  // Debt reminder
   socket.on('debtReminder', (data: { message: string }) => {
     Alert.alert('Recordatorio de deuda', data.message);
     saveNotification({
