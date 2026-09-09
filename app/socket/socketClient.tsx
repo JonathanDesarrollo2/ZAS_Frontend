@@ -103,6 +103,9 @@ export const connectSocket = async (): Promise<Socket> => {
       link: data.link,
       createdAt: new Date().toISOString(),
     });
+    if (data.link) {
+      Linking.openURL(data.link);
+    }
   });
 
   socket.on('debtReminder', (data: { message: string }) => {
