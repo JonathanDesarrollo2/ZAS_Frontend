@@ -1,3 +1,4 @@
+// LEIDO
 // app/payment/index.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {

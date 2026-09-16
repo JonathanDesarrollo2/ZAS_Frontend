@@ -1,3 +1,4 @@
+// LEIDO
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, Animated, StyleSheet } from 'react-native';
 import { router } from 'expo-router';

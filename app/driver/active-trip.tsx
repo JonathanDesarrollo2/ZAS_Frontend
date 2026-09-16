@@ -1,3 +1,4 @@
+// LEIDO
 // app/driver/active-trip.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import {
@@ -294,6 +295,14 @@ const DriverActiveTripScreen = () => {
   if (!trip) return null;
 
   const isAppPayment = trip.payment_method === 'app';
+  const normalizeAddress = (value?: string) => {
+    if (!value) return 'Ubicación sin nombre';
+    return value
+      .replace(/\b[A-Z0-9]{3}\+[A-Z0-9]{3}\s*,?\s*/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/,\s*,/g, ', ')
+      .trim();
+  };
 
   return (
     <View style={styles.screen}>
@@ -310,8 +319,8 @@ const DriverActiveTripScreen = () => {
           )}
           <Text style={styles.value}>{trip.passenger?.username || trip.passenger?.userlogin}</Text>
         </View>
-        <Text style={styles.value}>📍 Origen: {trip.pickup_address}</Text>
-        <Text style={styles.value}>🏁 Destino: {trip.dropoff_address}</Text>
+        <Text style={styles.value}>📍 Origen: {normalizeAddress(trip.pickup_address)}</Text>
+        <Text style={styles.value}>🏁 Destino: {normalizeAddress(trip.dropoff_address)}</Text>
         <Text style={styles.price}>💰 ${Number(trip.price).toFixed(2)}</Text>
 
         {/* Sección de pago según método */}

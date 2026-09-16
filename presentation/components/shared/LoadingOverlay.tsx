@@ -1,3 +1,4 @@
+// LEIDO
 import React from 'react';
 import { View, ActivityIndicator, Text, StyleSheet, Modal } from 'react-native';
 

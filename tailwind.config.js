@@ -1,3 +1,4 @@
+// LEIDO
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   // Incluye todos los archivos .js,.jsx,.ts,.tsx dentro de app/ y posibles componentes

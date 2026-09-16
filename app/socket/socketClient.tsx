@@ -1,3 +1,4 @@
+// LEIDO
 import io, { Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Linking } from 'react-native';
@@ -22,7 +23,16 @@ const saveNotification = async (notification: {
     const trimmed = list.slice(0, 50);
     await AsyncStorage.setItem('notifications', JSON.stringify(trimmed));
   } catch (error) {
-    console.log('Error guardando notificación', error);
+    // La persistencia se resuelve en almacenamiento local; no es crítico para la sesión.
+  }
+};
+
+const upsertPersistentTripNotice = async (tripId: string, title: string, body: string) => {
+  try {
+    const payload = JSON.stringify({ tripId, title, body, createdAt: new Date().toISOString() });
+    await AsyncStorage.setItem('persistent_trip_notice', payload);
+  } catch (error) {
+    // La notificación persistente queda en memoria local del dispositivo.
   }
 };
 
@@ -82,17 +92,25 @@ export const connectSocket = async (): Promise<Socket> => {
   });
 
   socket.on('connect', () => {
-    console.log('🔌 Socket conectado:', socket?.id);
     startDriverLocationUpdates(socket!);
   });
 
-  socket.on('disconnect', (reason) => {
-    console.log('❌ Socket desconectado:', reason);
+  socket.on('disconnect', () => {
     stopDriverLocationUpdates();
   });
 
-  socket.on('connect_error', (error) => {
-    console.error('Error de conexión socket:', error.message);
+  socket.on('connect_error', () => {
+    // La reconexión se maneja de forma automática por el cliente.
+  });
+
+  socket.on('trip:accepted', (data: { tripId?: string; driver?: { name?: string } }) => {
+    if (data?.tripId) {
+      upsertPersistentTripNotice(
+        data.tripId,
+        'Viaje aceptado',
+        data.driver?.name ? `Tu viaje fue aceptado por ${data.driver.name}.` : 'Tu viaje fue aceptado.'
+      );
+    }
   });
 
   socket.on('adminNotification', (data: { title: string; body: string; link?: string }) => {

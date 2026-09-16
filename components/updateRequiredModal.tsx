@@ -1,3 +1,4 @@
+// LEIDO
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Linking,

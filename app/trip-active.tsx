@@ -1,3 +1,4 @@
+// LEIDO
 // app/trip-active.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {

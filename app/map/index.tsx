@@ -1,3 +1,4 @@
+// LEIDO
 import { View, Text, Button } from 'react-native';
 import { useEffect } from 'react';
 import { usePermissionsStore } from '../../presentation/store/usePermissions';

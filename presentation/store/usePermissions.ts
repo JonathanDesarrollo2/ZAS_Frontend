@@ -1,3 +1,4 @@
+// LEIDO
 import { create } from 'zustand';
 import { PermissionStatus } from '../../infraestructure/interfaces/location';
 import { checkLocationPermission, requestLocationPermission } from '../../core/actions/permissions/location';

@@ -1,3 +1,4 @@
+// LEIDO
 import { View, Text, Pressable } from 'react-native';
 import { ThemedText } from '../../presentation/components/shared/themed-text';
 import { usePermissionsStore } from '../../presentation/store/usePermissions';

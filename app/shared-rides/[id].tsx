@@ -1,3 +1,4 @@
+// LEIDO
 import {
   View, Text, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, TextInput
 } from 'react-native';

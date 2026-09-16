@@ -1,3 +1,4 @@
+// LEIDO
 // app/driver/find-trips.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
@@ -22,6 +23,15 @@ interface Trip {
     userlogin: string;
   };
 }
+
+const sanitizeReadableAddress = (value?: string) => {
+  if (!value) return 'Ubicación sin nombre';
+  return value
+    .replace(/\b[A-Z0-9]{3}\+[A-Z0-9]{3}\s*,?\s*/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/,\s*,/g, ', ')
+    .trim();
+};
 
 const FindTripsScreen = () => {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -144,12 +154,12 @@ const FindTripsScreen = () => {
     >
       <View style={styles.routeRow}>
         <Feather name="circle" size={14} color="#00C9A7" />
-        <Text style={styles.address}>{item.pickup_address}</Text>
+        <Text style={styles.address}>{sanitizeReadableAddress(item.pickup_address)}</Text>
       </View>
       <View style={styles.dottedLine} />
       <View style={styles.routeRow}>
         <Feather name="map-pin" size={14} color="#FF6B6B" />
-        <Text style={styles.address}>{item.dropoff_address}</Text>
+        <Text style={styles.address}>{sanitizeReadableAddress(item.dropoff_address)}</Text>
       </View>
       <View style={styles.infoRow}>
         <Feather name="dollar-sign" size={14} color="#374151" style={{ marginRight: 6 }} />

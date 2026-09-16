@@ -1,3 +1,4 @@
+// LEIDO
 // app/trip-waiting.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import {

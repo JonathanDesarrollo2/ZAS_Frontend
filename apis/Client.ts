@@ -1,3 +1,4 @@
+// LEIDO
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // La URL viene EXCLUSIVAMENTE de la variable de entorno definida en eas.json

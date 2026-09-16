@@ -1,3 +1,4 @@
+// LEIDO
 import { apiClient, getToken } from './Client';
 
 export interface Category {

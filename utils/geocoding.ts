@@ -1,3 +1,4 @@
+// LEIDO
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {

@@ -1,3 +1,4 @@
+// LEIDO
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts, SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 import { Stack, router, useRootNavigationState, useSegments } from 'expo-router';

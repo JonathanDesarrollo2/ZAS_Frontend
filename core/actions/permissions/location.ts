@@ -1,3 +1,4 @@
+// LEIDO
 import * as Location from 'expo-location';
 import { PermissionStatus } from '../../../infraestructure/interfaces/location';
 

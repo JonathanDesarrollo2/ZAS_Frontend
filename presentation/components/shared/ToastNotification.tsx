@@ -1,3 +1,4 @@
+// LEIDO
 import React, { useEffect, useRef } from 'react';
 import { Animated, View, Text, StyleSheet, Dimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';

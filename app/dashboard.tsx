@@ -1,3 +1,4 @@
+// LEIDO
 // app/dashboard.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
@@ -133,8 +134,10 @@ const DashboardScreen = () => {
 
   // ✅ Configurar socket: balance y notificaciones
   useEffect(() => {
+    let isMounted = true;
     const setupSocket = async () => {
       const socket = await connectSocket();
+      if (!isMounted) return;
       const handleBalanceUpdate = () => {
         checkSession();
       };
@@ -144,7 +147,7 @@ const DashboardScreen = () => {
         // if (data?.link) Linking.openURL(data.link);
         // De lo contrario, la notificación solo se guardará en el historial local.
       };
-      socket.on('adminNotification', handleAdminNotification);
+      socket.on('balanceUpdated', handleBalanceUpdate);
       socket.on('adminNotification', handleAdminNotification);
       return () => {
         socket.off('balanceUpdated', handleBalanceUpdate);
@@ -152,7 +155,10 @@ const DashboardScreen = () => {
       };
     };
     setupSocket();
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [checkSession]);
 
   // ✅ Verificar versión mínima
       useEffect(() => {
@@ -175,13 +181,16 @@ const DashboardScreen = () => {
         checkVersion();
       }, []);
 
+  const hasRedirectedTripRef = useRef(false);
+
   useEffect(() => {
-    if (!user || isLoading) return;
+    if (!user || isLoading || hasRedirectedTripRef.current) return;
 
     const checkActiveTrip = async () => {
       try {
         const res = await getActiveTrip();
         if (res.result && res.content) {
+          hasRedirectedTripRef.current = true;
           const trip = res.content;
           if (user.nivel === 2) {
             router.replace({

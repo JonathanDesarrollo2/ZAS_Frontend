@@ -1,3 +1,4 @@
+// LEIDO
 import { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet, Image, Text } from 'react-native';
 import { router } from 'expo-router'

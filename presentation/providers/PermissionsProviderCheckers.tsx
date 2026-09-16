@@ -1,3 +1,4 @@
+// LEIDO
 import { PropsWithChildren, useEffect } from 'react';
 import PermissionsScreen from '../../app/permissions/index';
 import { router } from 'expo-router';

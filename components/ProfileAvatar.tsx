@@ -1,3 +1,4 @@
+// LEIDO
 // components/ProfileAvatar.tsx
 import React, { useState } from 'react';
 import {

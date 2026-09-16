@@ -1,3 +1,4 @@
+// LEIDO
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Image, Dimensions,
