@@ -20,7 +20,8 @@ const ToastNotification: React.FC<Props> = ({
   message,
   type = 'error',
   onHide,
-  duration = 4000,
+  // El popup permanece visible el tiempo suficiente para leer avisos de viaje y pago.
+  duration = 8000,
 }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-80)).current;

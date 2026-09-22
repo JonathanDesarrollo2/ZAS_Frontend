@@ -1,18 +1,22 @@
 // LEIDO
 // app/trip-active.tsx
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, Animated, StyleSheet,
-  TextInput, ActivityIndicator, ScrollView, Alert, Image,
+  TextInput, ActivityIndicator, ScrollView, Image,
   Modal, KeyboardAvoidingView, Platform, FlatList,
   BackHandler, AppState,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { connectSocket, getSocket } from './socket/socketClient';
+import { connectSocket, getSocket, ensurePersistentTripNotification, clearPersistentTripNotification } from '../services/socketClient';
 import { apiClient } from '../apis/Client';
 import { confirmTripPayment, completeTrip, cancelTrip } from '../apis/trips';
+import { getUnreadCount } from '../apis/chat';
+import ToastNotification from '../presentation/components/shared/toastNotification';
+import { useAuth } from '../presentation/store/AuthStore';
+import { isChatOpen } from '../services/chatPresence';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
@@ -44,46 +48,20 @@ const BANKS = [
   { code: '0191', name: 'Banco Nacional de Crédito (BNC)' },
 ];
 
-const Toast = ({ message, type = 'error', visible, onHide }: {
-  message: string;
-  type?: 'error' | 'success';
-  visible: boolean;
-  onHide: () => void;
-}) => {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(-80)).current;
-  useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.spring(translateY, { toValue: 0, friction: 8, tension: 100, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-      ]).start();
-      const t = setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(translateY, { toValue: -80, duration: 250, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }),
-        ]).start(() => onHide());
-      }, 4000);
-      return () => clearTimeout(t);
-    }
-  }, [visible]);
-  if (!visible) return null;
-  const bgColor = type === 'error' ? '#FF6B6B' : '#00C9A7';
-  return (
-    <Animated.View style={[styles.toast, { backgroundColor: bgColor, opacity, transform: [{ translateY }] }]}>
-      <View style={styles.toastContent}>
-        <Feather name={type === 'error' ? 'alert-circle' : 'check-circle'} size={22} color="#fff" style={{ marginRight: 12 }} />
-        <Text style={styles.toastText}>{message}</Text>
-      </View>
-    </Animated.View>
-  );
-};
-
 const locationPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="%2300C9A7" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`
 )}`;
 
+// Marcadores embebidos: no dependen de los iconos remotos de Google Maps.
+const originPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#00A884" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#00A884">A</text></svg>`
+ )}`;
+const destinationPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#D99A00" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#D99A00">B</text></svg>`
+ )}`;
+
 const TripActiveScreen = () => {
+  const { user } = useAuth();
   const { tripId, driverId, driverName, vehicle, driverLat, driverLng } =
     useLocalSearchParams<{
       tripId: string;
@@ -115,6 +93,7 @@ const TripActiveScreen = () => {
   const [bankModalVisible, setBankModalVisible] = useState(false);
 
   const [tripStatus, setTripStatus] = useState<string>('accepted');
+  const [tripOrigen, setTripOrigen] = useState<{ lat: number; lng: number } | null>(null);
   const [tripDestino, setTripDestino] = useState<{ lat: number; lng: number } | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
 
@@ -127,6 +106,9 @@ const TripActiveScreen = () => {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [toastType, setToastType] = useState<'error' | 'success'>('error');
+  // Cuenta los mensajes recibidos mientras el pasajero permanece en el viaje.
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const lastMessageNoticeAt = useRef(0);
   const showToast = useCallback((msg: string, type: 'error' | 'success' = 'error') => {
     setToastMsg(msg);
     setToastType(type);
@@ -139,11 +121,110 @@ const TripActiveScreen = () => {
 
   // Polling para actualizar estado cada 5 segundos
   useEffect(() => {
+    let cancelled = false;
+    let activeSocket: Awaited<ReturnType<typeof connectSocket>> | null = null;
+    const handleTracking = (data: any) => {
+      if (data.driverId === driverId || data.tripId === tripId) {
+        if (data.lat && data.lng) {
+          setDriverLocation({ lat: data.lat, lng: data.lng });
+          webViewRef.current?.injectJavaScript(`updateDriverPosition(${data.lat}, ${data.lng});`);
+        }
+      }
+    };
+    const handleDriverArrived = () => {
+      showToast('¡El conductor ha llegado!', 'success');
+      setTripStatus('arrived');
+      fetchBankData();
+    };
+    const handleTripStarted = () => {
+      showToast('El viaje ha comenzado', 'success');
+      setTripStatus('in_progress');
+      fetchTripData();
+    };
+    const handleDestinationReached = () => {
+      showToast('El conductor ha llegado al destino. Confirma tu llegada.', 'success');
+      setTripStatus('arrived_destination');
+    };
+    const handleTripCompleted = () => {
+      showToast('Has llegado a tu destino', 'success');
+      setTripStatus('completed');
+    };
+    const handlePaymentStatus = (data: any) => {
+      fetchTripData();
+      if (data.status === 'verified') showToast('El conductor ha verificado tu pago', 'success');
+      if (data.status === 'rejected') showToast('El conductor ha rechazado tu pago', 'error');
+    };
+    const handleTripCancelled = () => {
+      showToast('Viaje cancelado', 'error');
+      setTripStatus('cancelled');
+      setTimeout(() => router.replace('/dashboard'), 800);
+    };
+    let handleChatMessage: (message: { sender_id?: string; sender_name?: string }) => void = () => undefined;
+    let handleChatRead: (data: { reader_id?: string }) => void = () => undefined;
+
+    connectSocket().then((socket) => {
+      if (cancelled) return;
+      activeSocket = socket;
+      socket.emit('trip:join', tripId);
+      socket.on('trip:tracking', handleTracking);
+      socket.on('driverArrived', handleDriverArrived);
+      socket.on('tripStarted', handleTripStarted);
+      socket.on('tripDestinationReached', handleDestinationReached);
+      socket.on('tripCompleted', handleTripCompleted);
+      socket.on('tripPaymentStatusChanged', handlePaymentStatus);
+      socket.on('tripCancelled', handleTripCancelled);
+       handleChatMessage = (message: { sender_id?: string; sender_name?: string }) => {
+        if (message.sender_id && String(message.sender_id) !== String(user?.id)) {
+          setUnreadMessages((count) => count + 1);
+          const now = Date.now();
+           if (!isChatOpen() && now - lastMessageNoticeAt.current >= 10000) {
+            lastMessageNoticeAt.current = now;
+            showToast(`Tienes un mensaje nuevo de ${message.sender_name || 'tu conductor'}`, 'success');
+          }
+         }
+       };
+       handleChatRead = (data: { reader_id?: string }) => {
+         if (String(data.reader_id) === String(user?.id)) setUnreadMessages(0);
+       };
+       socket.on('chat:message', handleChatMessage);
+       socket.on('chat:read', handleChatRead);
+    }).catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      if (activeSocket) {
+        activeSocket.off('trip:tracking', handleTracking);
+        activeSocket.off('driverArrived', handleDriverArrived);
+        activeSocket.off('tripStarted', handleTripStarted);
+        activeSocket.off('tripDestinationReached', handleDestinationReached);
+        activeSocket.off('tripCompleted', handleTripCompleted);
+        activeSocket.off('tripPaymentStatusChanged', handlePaymentStatus);
+        activeSocket.off('tripCancelled', handleTripCancelled);
+         activeSocket.off('chat:message', handleChatMessage);
+         activeSocket.off('chat:read', handleChatRead);
+      }
+    };
+  }, [tripId, driverId]);
+
+  /* Seguimiento en tiempo real: la ruta previa a abordar va del conductor al origen. */
+  useEffect(() => {
     const interval = setInterval(() => {
       fetchTripData();
     }, 5000);
     return () => clearInterval(interval);
   }, [tripId]);
+
+  // Cambiar de etapa solo cambia el destino de la ruta; no reconstruye el mapa.
+  useEffect(() => {
+    const target = tripStatus === 'in_progress' || tripStatus === 'arrived_destination'
+      ? tripDestino
+      : tripOrigen;
+    if (target) {
+      webViewRef.current?.injectJavaScript(
+        `window.updateRouteTarget && window.updateRouteTarget(${target.lat}, ${target.lng}); true;`,
+      );
+    }
+  }, [tripStatus, tripOrigen?.lat, tripOrigen?.lng, tripDestino?.lat, tripDestino?.lng]);
 
   // Al volver a la app, refrescar estado
   useEffect(() => {
@@ -159,7 +240,7 @@ const TripActiveScreen = () => {
   useEffect(() => {
     const backAction = () => {
       if (tripStatus !== 'completed' && tripStatus !== 'cancelled') {
-        Alert.alert('Viaje en curso', 'No puedes salir hasta que el viaje finalice.');
+        showToast('No puedes salir hasta que el viaje finalice.');
         return true;
       }
       return false;
@@ -175,7 +256,7 @@ const TripActiveScreen = () => {
   useEffect(() => {
     fetchBankData();
     fetchTripData();
-    setupSocket();
+    getUnreadCount(tripId!).then(setUnreadMessages).catch(() => undefined);
   }, [tripId]);
 
   const fetchBankData = async () => {
@@ -188,8 +269,7 @@ const TripActiveScreen = () => {
       } else {
         setBankData(null);
       }
-    } catch (err: any) {
-      console.log('Error al cargar datos bancarios:', err.message);
+    } catch {
       setBankData(null);
     } finally {
       setLoadingBank(false);
@@ -203,6 +283,19 @@ const TripActiveScreen = () => {
       );
       if (res.result) {
         const trip = res.content;
+        if (!['completed', 'cancelled'].includes(trip.status)) {
+          const driverAssigned = ['accepted', 'arrived'].includes(trip.status);
+          ensurePersistentTripNotification(
+            tripId!,
+            driverAssigned ? 'Conductor asignado' : 'Viaje en curso',
+            driverAssigned
+              ? `${driverName || 'Un conductor'} aceptó tu viaje.`
+              : `Conductor: ${driverName || 'Conductor'}`
+          ).catch(() => undefined);
+        } else {
+          // Limpieza de respaldo si el evento de finalización ocurrió sin conexión.
+          clearPersistentTripNotification().catch(() => undefined);
+        }
         setTripPayment({
           payment_status: trip.payment_status,
           payment_reference: trip.payment_reference,
@@ -217,8 +310,11 @@ const TripActiveScreen = () => {
           setShowPaymentForm(false);
         }
         setTripStatus(trip.status || 'accepted');
+        if (trip.pickup_lat && trip.pickup_lng) {
+          setTripOrigen({ lat: Number(trip.pickup_lat), lng: Number(trip.pickup_lng) });
+        }
         if (trip.dropoff_lat && trip.dropoff_lng) {
-          setTripDestino({ lat: trip.dropoff_lat, lng: trip.dropoff_lng });
+          setTripDestino({ lat: Number(trip.dropoff_lat), lng: Number(trip.dropoff_lng) });
         }
 
         let publicInfoObtained = false;
@@ -265,80 +361,9 @@ const TripActiveScreen = () => {
     }
   };
 
-  const setupSocket = async () => {
-    try {
-      const socket = await connectSocket();
-      socket.emit('trip:join', tripId);
-
-      socket.on('trip:tracking', (data: any) => {
-        if (data.driverId === driverId || data.tripId === tripId) {
-          if (data.lat && data.lng) {
-            setDriverLocation({ lat: data.lat, lng: data.lng });
-            webViewRef.current?.injectJavaScript(`
-              updateDriverPosition(${data.lat}, ${data.lng});
-            `);
-          }
-        }
-      });
-
-      socket.on('driverArrived', () => {
-        showToast('¡El conductor ha llegado!', 'success');
-        setTripStatus('arrived');
-        fetchBankData();
-      });
-
-      socket.on('tripStarted', () => {
-        showToast('El viaje ha comenzado', 'success');
-        setTripStatus('in_progress');
-        fetchTripData();
-      });
-
-      socket.on('tripDestinationReached', (data: any) => {
-        showToast('El conductor ha llegado al destino. Confirma tu llegada.', 'success');
-        setTripStatus('arrived_destination');
-      });
-
-      socket.on('tripCompleted', () => {
-        showToast('Has llegado a tu destino', 'success');
-        setTripStatus('completed');
-      });
-
-      socket.on('tripPaymentStatusChanged', (data: any) => {
-        fetchTripData();
-        if (data.status === 'verified') {
-          showToast('El conductor ha verificado tu pago', 'success');
-        } else if (data.status === 'rejected') {
-          showToast('El conductor ha rechazado tu pago', 'error');
-        }
-      });
-
-      socket.on('tripCancelled', (data: any) => {
-        showToast('Viaje cancelado', 'error');
-        setTripStatus('cancelled');
-        setTimeout(() => router.replace('/dashboard'), 800);
-      });
-
-    } catch (error) {
-      console.error('Error al conectar socket:', error);
-    }
-
-    return () => {
-      const socket = getSocket();
-      if (socket) {
-        socket.off('trip:tracking');
-        socket.off('driverArrived');
-        socket.off('tripStarted');
-        socket.off('tripDestinationReached');
-        socket.off('tripCompleted');
-        socket.off('tripPaymentStatusChanged');
-        socket.off('tripCancelled');
-      }
-    };
-  };
-
   const handleSendPayment = async () => {
     if (!reference.trim() || !selectedBankCode || !cedula.trim() || !phone.trim()) {
-      Alert.alert('Campos requeridos', 'Completa todos los datos del pago');
+      showToast('Completa todos los datos del pago');
       return;
     }
     setSendingPayment(true);
@@ -349,10 +374,11 @@ const TripActiveScreen = () => {
         payer_cedula: cedula.trim(),
         payer_phone: phone.trim(),
       });
-      Alert.alert('Pago enviado', 'El conductor revisará tu comprobante');
+      // El comprobante usa el popup común para mantener el mismo aviso visible.
+      showToast('El conductor revisará tu comprobante', 'success');
       fetchTripData();
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      showToast(err.message);
     } finally {
       setSendingPayment(false);
     }
@@ -364,7 +390,7 @@ const TripActiveScreen = () => {
       setTripStatus('completed');
       showToast('Viaje completado', 'success');
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      showToast(err.message);
     }
   };
 
@@ -373,11 +399,16 @@ const TripActiveScreen = () => {
       await cancelTrip(tripId!);
       router.replace('/dashboard');
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      showToast(err.message);
     }
   };
 
-  const mapHTML = driverLocation
+  const routeOrigin = driverLocation ?? tripOrigen ?? { lat: 0, lng: 0 };
+  const routeDestination = tripStatus === 'in_progress' || tripStatus === 'arrived_destination'
+    ? (tripDestino ?? tripOrigen ?? routeOrigin)
+    : (tripOrigen ?? tripDestino ?? routeOrigin);
+
+  const mapHTML = useMemo(() => driverLocation || tripOrigen || tripDestino
     ? `
     <!DOCTYPE html>
     <html>
@@ -388,65 +419,169 @@ const TripActiveScreen = () => {
     <body>
       <div id="map"></div>
       <script>
-        let map, driverMarker, directionsService, directionsRenderer;
-        const destinationCoords = ${tripStatus === 'in_progress' && tripDestino ? `{ lat: ${tripDestino.lat}, lng: ${tripDestino.lng} }` : 'null'};
+        let map, driverMarker, pickupMarker, destinationMarker, directionsService;
+        // Directions se pide UNA vez por tramo; la polyline se recorta localmente
+        // en cada actualización. Solo se vuelve a llamar a Google si el conductor
+        // se desvía >90m de la ruta (máx. 1 re-cálculo cada 40s).
+        let activeRouteTarget = null;
+        let routePath = [];
+        let routePolyline = null;
+        let trimIndex = 0;
+        let lastRerouteAt = 0;
+        let driverAnim = null;
+        // La cámara solo se encuadra una vez (ruta inicial); nunca en updates.
+        let routeViewportFitted = false;
+        const driverStart = ${driverLocation ? `{ lat: ${driverLocation.lat}, lng: ${driverLocation.lng} }` : (tripOrigen ? `{ lat: ${tripOrigen.lat}, lng: ${tripOrigen.lng} }` : '{ lat: 0, lng: 0 }')};
+        const pickupCoords = ${tripOrigen ? `{ lat: ${tripOrigen.lat}, lng: ${tripOrigen.lng} }` : 'null'};
+        const destinationCoords = ${tripDestino ? `{ lat: ${tripDestino.lat}, lng: ${tripDestino.lng} }` : 'null'};
+
+         function createMarker(position, icon, title) {
+           return new google.maps.Marker({
+             position,
+             map,
+             icon: { url: icon, anchor: new google.maps.Point(18, 36) },
+             title,
+           });
+        }
+
+        function distMeters(a, b) {
+          const R = 6371000;
+          const dLat = (b.lat - a.lat) * Math.PI / 180;
+          const dLng = (b.lng - a.lng) * Math.PI / 180;
+          const s = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+            + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180)
+            * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+          return 2 * R * Math.asin(Math.sqrt(s));
+        }
+
+         function applyRoute(response, fitViewport) {
+           const route = response.routes && response.routes[0];
+           if (!route) return;
+           const raw = route.overview_path || [];
+           const pts = raw.getArray ? raw.getArray() : raw;
+           routePath = pts.map(function(p) { return { lat: p.lat(), lng: p.lng() }; });
+           trimIndex = 0;
+           if (!routePolyline) {
+             routePolyline = new google.maps.Polyline({
+               strokeColor: '#00C9A7', strokeOpacity: 1, strokeWeight: 5, zIndex: 10,
+             });
+             routePolyline.setMap(map);
+           }
+           routePolyline.setPath(routePath);
+           if (fitViewport && !routeViewportFitted && route.bounds) {
+             map.fitBounds(route.bounds);
+             routeViewportFitted = true;
+           }
+         }
+
+         function requestRoute(origin, destination, fitViewport) {
+          if (!directionsService || !origin || !destination) return;
+          directionsService.route({
+            origin,
+            destination,
+            travelMode: 'DRIVING'
+          }, function(response, status) {
+             if (status === 'OK') {
+               applyRoute(response, fitViewport);
+             }
+          });
+        }
+
+        // Recorte local de la polyline: sin llamadas a Directions.
+        function trimRouteTo(pos) {
+          if (!routePath.length) {
+            // Reintento espaciado si el cálculo inicial aún no llega o falló.
+            if (activeRouteTarget && Date.now() - lastRerouteAt > 15000) {
+              lastRerouteAt = Date.now();
+              requestRoute(pos, activeRouteTarget, false);
+            }
+            return;
+          }
+          let best = trimIndex, bestDist = Infinity;
+          for (let i = Math.max(0, trimIndex - 5); i < routePath.length; i++) {
+            const d = distMeters(pos, routePath[i]);
+            if (d < bestDist) { bestDist = d; best = i; }
+          }
+          if (best > trimIndex) trimIndex = best;
+          routePolyline.setPath([pos].concat(routePath.slice(trimIndex + 1)));
+          // ÚNICA causa de re-cálculo: desvío real >90m de la ruta.
+          // 90m descarta ruido de GPS urbano; 40s evita ráfagas de reroutes.
+          if (bestDist > 90 && Date.now() - lastRerouteAt > 40000) {
+            lastRerouteAt = Date.now();
+            requestRoute(pos, activeRouteTarget, false);
+          }
+        }
 
         function initMap() {
-          const driverPos = { lat: ${driverLocation.lat}, lng: ${driverLocation.lng} };
+          const driverPos = driverStart;
           map = new google.maps.Map(document.getElementById('map'), {
             zoom: 14,
             center: driverPos,
             disableDefaultUI: true,
-            zoomControl: false
+            zoomControl: false,
           });
-          driverMarker = new google.maps.Marker({
-            position: driverPos,
-            map: map,
-            icon: '${locationPinIcon}'
-          });
+
+          driverMarker = createMarker(driverPos, '${locationPinIcon}', 'Conductor');
+          if (pickupCoords) {
+             pickupMarker = createMarker(pickupCoords, '${originPinIcon}', 'Origen');
+          }
+          if (destinationCoords) {
+             destinationMarker = createMarker(destinationCoords, '${destinationPinIcon}', 'Destino');
+          }
 
           directionsService = new google.maps.DirectionsService();
-          directionsRenderer = new google.maps.DirectionsRenderer({
-            suppressMarkers: false,
-            polylineOptions: { strokeColor: '#00C9A7', strokeWeight: 5 }
-          });
-          directionsRenderer.setMap(map);
 
-          if (destinationCoords) {
-            new google.maps.Marker({
-              position: destinationCoords,
-              map: map,
-              icon: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png'
-            });
-            directionsService.route({
-              origin: driverPos,
-              destination: destinationCoords,
-              travelMode: 'DRIVING'
-            }, function(response, status) {
-              if (status === 'OK') directionsRenderer.setDirections(response);
-            });
-          }
+           const routeTarget = ${tripStatus === 'in_progress' || tripStatus === 'arrived_destination' ? 'destinationCoords || pickupCoords' : 'pickupCoords || destinationCoords'};
+           if (routeTarget) {
+              requestRoute(driverPos, routeTarget, true);
+              activeRouteTarget = routeTarget;
+           }
         }
-        function updateDriverPosition(lat, lng) {
-          const pos = { lat, lng };
-          driverMarker.setPosition(pos);
-          map.panTo(pos);
-          if (destinationCoords) {
-            directionsService.route({
-              origin: pos,
-              destination: destinationCoords,
-              travelMode: 'DRIVING'
-            }, function(response, status) {
-              if (status === 'OK') directionsRenderer.setDirections(response);
-            });
-          }
-        }
+
+         // Filtro de ruido GPS: un salto >180 km/h (50 m/s) respecto a la última
+         // posición aceptada se IGNORA (ni marcador, ni recorte, ni reroute).
+         // Tras 3 descartes seguidos se acepta la siguiente como nueva base.
+         let lastAcceptedPos = null, lastAcceptedAt = 0, discardedCount = 0;
+
+         // El marcador del conductor se interpola (~2.5s) entre posiciones para
+         // que se vea fluido aunque las actualizaciones lleguen cada ~6s.
+         function updateDriverPosition(lat, lng) {
+          if (!driverMarker) return;
+           const to = { lat, lng };
+           const nowMs = Date.now();
+           if (lastAcceptedPos && discardedCount < 3
+               && distMeters(lastAcceptedPos, to) > 50 * ((nowMs - lastAcceptedAt) / 1000)) {
+             discardedCount++;
+             return;
+           }
+           discardedCount = 0;
+           lastAcceptedPos = to;
+           lastAcceptedAt = nowMs;
+           const from = driverMarker.getPosition();
+           if (driverAnim) clearInterval(driverAnim);
+           const start = Date.now();
+           driverAnim = setInterval(function() {
+             const t = Math.min(1, (Date.now() - start) / 2500);
+             const pos = {
+               lat: from.lat() + (to.lat - from.lat()) * t,
+               lng: from.lng() + (to.lng - from.lng()) * t,
+             };
+             driverMarker.setPosition(pos);
+             trimRouteTo(pos);
+             if (t >= 1) { clearInterval(driverAnim); driverAnim = null; }
+           }, 50);
+         }
+
+         function updateRouteTarget(lat, lng) {
+           if (!driverMarker) return;
+           activeRouteTarget = { lat, lng };
+           requestRoute(driverMarker.getPosition(), activeRouteTarget, false);
+         }
       </script>
       <script async defer src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap"></script>
     </body>
     </html>
-  `
-    : '';
+  ` : '', [Boolean(driverLocation), tripOrigen?.lat, tripOrigen?.lng, tripDestino?.lat, tripDestino?.lng]);
 
   const photos = driverPublicInfo?.vehiclePhotos;
   const selectedBankName = BANKS.find(b => b.code === selectedBankCode)?.name || 'Selecciona tu banco';
@@ -457,10 +592,10 @@ const TripActiveScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 300 : 0}
     >
-      <Toast message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
-      {driverLocation ? (
+      <ToastNotification message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
+      {driverLocation || tripOrigen || tripDestino ? (
         <WebView
-          ref={webViewRef}
+           ref={webViewRef}
           style={styles.map}
           source={{ html: mapHTML }}
           javaScriptEnabled
@@ -538,10 +673,14 @@ const TripActiveScreen = () => {
 
           <TouchableOpacity
             style={styles.chatButton}
-            onPress={() => router.push({ pathname: '/chat', params: { tripId, chatWith: driverName || 'Conductor' } })}
+            onPress={() => {
+              setUnreadMessages(0);
+              router.push({ pathname: '/chat', params: { tripId, chatWith: driverName || 'Conductor' } });
+            }}
           >
             <Feather name="message-circle" size={20} color="#fff" />
             <Text style={styles.chatButtonText}> Chat</Text>
+            {unreadMessages > 0 && <View style={styles.chatBadge}><Text style={styles.chatBadgeText}>{unreadMessages}</Text></View>}
           </TouchableOpacity>
 
           {/* Estado del viaje */}
@@ -853,6 +992,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  chatBadge: { position: 'absolute', right: 10, top: -8, minWidth: 24, height: 24, borderRadius: 12, backgroundColor: '#FF5252', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFFFFF' },
+  chatBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   chatButtonText: { color: '#fff', fontWeight: '600', fontSize: 16, marginLeft: 8 },
   toast: {
     position: 'absolute',

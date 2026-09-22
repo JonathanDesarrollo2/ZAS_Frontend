@@ -6,6 +6,7 @@ import {
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { Feather } from '@expo/vector-icons';
 import { reverseGeocode, getPlaceDetails } from '../../../utils/geocoding';
+import { sanitizeReadableAddress } from '../../../utils/address';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
@@ -31,8 +32,8 @@ const MapSelector: React.FC<MapSelectorProps> = ({ visible, initialCoords, onCon
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         html, body, #map { height: 100%; margin: 0; padding: 0; }
-        .pin { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; }
-        .pin::after { content: '📍'; font-size: 36px; }
+        /* Pin turquesa acorde a los colores de la app, en lugar del emoji rojo. */
+        .pin { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; width: 40px; height: 40px; background-image: url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24"%3E%3Cpath fill="%2300C9A7" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/%3E%3C/svg%3E'); background-size: contain; background-repeat: no-repeat; }
       </style>
     </head>
     <body>
@@ -99,7 +100,10 @@ const MapSelector: React.FC<MapSelectorProps> = ({ visible, initialCoords, onCon
       );
       const json = await res.json();
       if (json.status === 'OK') {
-        setMapSuggestions(json.predictions.map((p: any) => ({ description: p.description, placeId: p.place_id })));
+        setMapSuggestions(json.predictions.map((p: any) => ({
+          description: sanitizeReadableAddress(p.description),
+          placeId: p.place_id,
+        })));
         setShowMapSuggestions(true);
       }
     } catch (e) {}

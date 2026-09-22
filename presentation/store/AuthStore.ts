@@ -18,7 +18,7 @@ import {
 } from '../../apis/Verification';
 import { getFCMToken } from '../../services/notifications';
 import { getToken } from '../../apis/Client';
-import { connectSocket } from '../../app/socket/socketClient'; // ← nuevo import
+import { connectSocket } from '../../services/socketClient';
 
 interface User {
   id: string;
@@ -191,7 +191,6 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
 
   checkSession: async () => {
-    set({ isLoading: true });
     try {
       const token = await AsyncStorage.getItem('authToken');
       if (!token) {

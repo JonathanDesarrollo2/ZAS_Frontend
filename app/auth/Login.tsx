@@ -79,8 +79,8 @@ const LoginScreen = () => {
         new Promise((_, reject) => setTimeout(() => reject(new Error('Tiempo de espera agotado')), 15000))
       ]);
 
-      showToast('¡Bienvenido! Redirigiendo...', 'success');
-      setTimeout(() => router.replace('/dashboard'), 1000);
+      // RESUELTO: RootLayout es la única autoridad de navegación tras autenticar.
+      showToast('¡Bienvenido!', 'success');
     } catch (err: any) {
       let mensaje = err?.message || 'Error al iniciar sesión';
       if (mensaje === 'Invalid value') mensaje = 'Correo o contraseña incorrectos';

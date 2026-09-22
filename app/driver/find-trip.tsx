@@ -2,14 +2,15 @@
 // app/driver/find-trips.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Animated, Alert,
+  View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Animated,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { apiClient } from '../../apis/Client';
-import { connectSocket, getSocket } from '../socket/socketClient'; // ✅ Importamos connectSocket
+import { connectSocket } from '../../services/socketClient';
+import ToastNotification from '../../presentation/components/shared/toastNotification';
 
 interface Trip {
   id: string;
@@ -33,11 +34,28 @@ const sanitizeReadableAddress = (value?: string) => {
     .trim();
 };
 
+const vehicleLabel = (value?: string) => {
+  const normalized = value?.toLowerCase();
+  if (normalized === 'moto' || normalized === 'motorcycle') return 'Moto';
+  if (normalized === 'auto' || normalized === 'carro' || normalized === 'car') return 'Auto';
+  return value || 'Vehículo';
+};
+
 const FindTripsScreen = () => {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+  const [toastType, setToastType] = useState<'error' | 'success'>('error');
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Los avisos de acceso, permisos y carga usan el popup común.
+  const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
+    setToastMsg(message);
+    setToastType(type);
+    setToastVisible(true);
+  }, []);
 
   const fetchTrips = useCallback(async () => {
     if (!currentCoords) return;
@@ -49,22 +67,39 @@ const FindTripsScreen = () => {
       if (response.result) {
         setTrips(response.content);
       } else {
-        Alert.alert('Error', 'No se pudieron cargar los viajes');
+        showToast('No se pudieron cargar los viajes');
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'No se pudieron cargar los viajes');
+      showToast(err.message || 'No se pudieron cargar los viajes');
     } finally {
       setLoading(false);
     }
-  }, [currentCoords]);
+  }, [currentCoords, showToast]);
 
   // Escuchar nuevos viajes
   useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-    const handleNewTrip = () => fetchTrips();
-    socket.on('newTripAvailable', handleNewTrip);
-    return () => { socket.off('newTripAvailable', handleNewTrip); };
+    let cancelled = false;
+    let socket: Awaited<ReturnType<typeof connectSocket>> | null = null;
+    const handleNewTrip = () => { void fetchTrips(); };
+    const handleTripCancelled = (data?: { tripId?: string }) => {
+      if (data?.tripId) {
+        setTrips((current) => current.filter((trip) => trip.id !== data.tripId));
+      }
+      void fetchTrips();
+    };
+
+    connectSocket().then((connectedSocket) => {
+      if (cancelled) return;
+      socket = connectedSocket;
+      socket.on('newTripAvailable', handleNewTrip);
+      socket.on('tripCancelled', handleTripCancelled);
+    }).catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      socket?.off('newTripAvailable', handleNewTrip);
+      socket?.off('tripCancelled', handleTripCancelled);
+    };
   }, [fetchTrips]);
 
   // Obtener ubicación optimizada y enviarla periódicamente al backend
@@ -76,7 +111,7 @@ const FindTripsScreen = () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
-          Alert.alert('Permiso de ubicación', 'Se necesita acceso a tu ubicación para buscar viajes.');
+          showToast('Se necesita acceso a tu ubicación para buscar viajes.');
           setLoading(false);
           return;
         }
@@ -166,8 +201,12 @@ const FindTripsScreen = () => {
         <Text style={styles.infoText}>${Number(item.price).toFixed(2)}</Text>
         <Feather name="user" size={14} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
         <Text style={styles.infoText}>{item.passenger?.username || item.passenger?.userlogin || 'Pasajero'}</Text>
-        <Feather name="truck" size={14} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
-        <Text style={styles.infoText}>{item.vehicle_type}</Text>
+        {vehicleLabel(item.vehicle_type) === 'Moto' ? (
+          <MaterialCommunityIcons name="motorbike" size={17} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
+        ) : (
+          <MaterialCommunityIcons name="car" size={17} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
+        )}
+        <Text style={styles.infoText}>{vehicleLabel(item.vehicle_type)}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -183,7 +222,8 @@ const FindTripsScreen = () => {
 
   return (
     <View style={styles.screen}>
-      <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+      <ToastNotification message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
+      <Animated.View style={[styles.container, { opacity: fadeAnim }]}> 
         <Text style={styles.title}>Viajes disponibles</Text>
         <FlatList
           data={trips}

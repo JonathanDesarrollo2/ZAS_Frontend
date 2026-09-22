@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { createTrip, estimatePrice, getActiveTrip } from '../apis/trips';
 import { useAutocomplete } from '../presentation/hooks/use-autocomplete';
 import { reverseGeocode } from '../utils/geocoding';
@@ -354,11 +354,11 @@ const RequestRideScreen = () => {
                 style={[styles.vehicleCard, selectedVehicle === 'moto' && styles.vehicleSelected]}
                 onPress={() => setSelectedVehicle('moto')}
               >
-                <Feather name="crosshair" size={24} color={selectedVehicle === 'moto' ? '#fff' : '#00C9A7'} />
+                 <MaterialCommunityIcons name="motorbike" size={26} color={selectedVehicle === 'moto' ? '#fff' : '#00C9A7'} />
                 <Text style={[styles.vehicleLabel, selectedVehicle === 'moto' && { color: '#fff' }]}>Moto</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.vehicleCard, styles.vehicleDisabled]} disabled>
-                <Feather name="truck" size={24} color="#B0BEC5" />
+                 <MaterialCommunityIcons name="car" size={26} color="#B0BEC5" />
                 <Text style={[styles.vehicleLabel, { color: '#B0BEC5' }]}>Auto (próximo)</Text>
               </TouchableOpacity>
             </View>

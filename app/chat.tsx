@@ -12,12 +12,13 @@ import {
   Platform,
   Keyboard,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getMessages, sendMessage, ChatMessage } from '../apis/chat';
-import { connectSocket } from './socket/socketClient';
+import { getMessages, sendMessage, markMessagesRead, ChatMessage } from '../apis/chat';
+import { connectSocket } from '../services/socketClient';
 import { useAuth } from '../presentation/store/AuthStore'; // ✅ importación corregida
+import { setChatOpen } from '../services/chatPresence';
 
 const ARRIVED_KEY_PREFIX = 'arrived_';
 
@@ -34,6 +35,13 @@ const ChatScreen = () => {
   const flatListRef = useRef<FlatList>(null);
   const { user } = useAuth(); // ahora user.id existe
   const [bottomPadding, setBottomPadding] = useState(BASE_BOTTOM_PADDING);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      setChatOpen(true);
+      return () => setChatOpen(false);
+    }, []),
+  );
 
   // Control del teclado
   useEffect(() => {
@@ -53,16 +61,31 @@ const ChatScreen = () => {
 
   // Carga inicial y socket
   useEffect(() => {
+    let cancelled = false;
+    let cleanupSocket: () => void = () => undefined;
     loadMessages();
+    markMessagesRead(tripId!).catch(() => undefined);
     const setupSocket = async () => {
       const socket = await connectSocket();
+      if (cancelled) return;
       socket.emit('trip:join', tripId);
 
-      socket.on('chat:message', (msg: ChatMessage) => {
+      const handleMessage = (msg: ChatMessage) => {
         setMessages(prev => [...prev, msg]);
-      });
+        markMessagesRead(tripId!).catch(() => undefined);
+      };
 
-      socket.on('driverArrived', async () => {
+      const handleRead = (data: { reader_id?: string }) => {
+        if (String(data.reader_id) !== String(user?.id)) {
+          setMessages(prev => prev.map(message => (
+            String(message.sender_id) === String(user?.id)
+              ? { ...message, read_at: new Date().toISOString() }
+              : message
+          )));
+        }
+      };
+
+      const handleDriverArrived = async () => {
         await AsyncStorage.setItem(ARRIVED_KEY_PREFIX + tripId, 'true');
         const systemMsg: ChatMessage = {
           id: Date.now(),
@@ -78,15 +101,23 @@ const ChatScreen = () => {
           );
           return alreadyExists ? prev : [...prev, systemMsg];
         });
-      });
+      };
 
-      return () => {
-        socket.off('chat:message');
-        socket.off('driverArrived');
+      socket.on('chat:message', handleMessage);
+      socket.on('chat:read', handleRead);
+      socket.on('driverArrived', handleDriverArrived);
+      cleanupSocket = () => {
+        socket.off('chat:message', handleMessage);
+        socket.off('chat:read', handleRead);
+        socket.off('driverArrived', handleDriverArrived);
       };
     };
 
-    setupSocket();
+    setupSocket().catch(() => undefined);
+    return () => {
+      cancelled = true;
+      cleanupSocket();
+    };
   }, [tripId]);
 
   const loadMessages = async () => {
@@ -141,6 +172,10 @@ const ChatScreen = () => {
         )}
         <Text style={[styles.msgText, isMine && { color: '#fff' }]}>
           {item.message}
+        </Text>
+        <Text style={[styles.messageTime, isMine && styles.myMessageTime]}>
+          {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {isMine && <Text> {item.read_at ? '✓✓' : '✓'}</Text>}
         </Text>
       </View>
     );
@@ -239,6 +274,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#555',
     marginBottom: 2,
+  },
+  messageTime: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    color: '#9CA3AF',
+    fontSize: 10,
+  },
+  myMessageTime: {
+    color: 'rgba(255,255,255,0.8)',
   },
   msgText: { fontSize: 16, color: '#111827' },
   systemMessage: {

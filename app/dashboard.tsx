@@ -9,7 +9,7 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../presentation/store/AuthStore';
 import LoadingOverlay from '../presentation/components/shared/LoadingOverlay';
-import { connectSocket } from './socket/socketClient';
+import { connectSocket } from '../services/socketClient';
 import ToastNotification from '../presentation/components/shared/toastNotification';
 import { apiClient } from '../apis/Client';
 import { getActiveTrip } from '../apis/trips';
@@ -134,29 +134,28 @@ const DashboardScreen = () => {
 
   // ✅ Configurar socket: balance y notificaciones
   useEffect(() => {
-    let isMounted = true;
+    let cancelled = false;
+    let activeSocket: Awaited<ReturnType<typeof connectSocket>> | null = null;
+    const handleBalanceUpdate = () => {
+      void checkSession();
+    };
+    const handleAdminNotification = (_data: any) => {
+      // La notificación se guarda en el historial local por el cliente socket.
+    };
     const setupSocket = async () => {
       const socket = await connectSocket();
-      if (!isMounted) return;
-      const handleBalanceUpdate = () => {
-        checkSession();
-      };
-      const handleAdminNotification = (data: any) => {
-        // Si quieres abrir el enlace directamente al recibir la notificación,
-        // descomenta la siguiente línea:
-        // if (data?.link) Linking.openURL(data.link);
-        // De lo contrario, la notificación solo se guardará en el historial local.
-      };
+      if (cancelled) return;
+      activeSocket = socket;
       socket.on('balanceUpdated', handleBalanceUpdate);
       socket.on('adminNotification', handleAdminNotification);
-      return () => {
-        socket.off('balanceUpdated', handleBalanceUpdate);
-        socket.off('adminNotification', handleAdminNotification);
-      };
     };
-    setupSocket();
+    setupSocket().catch(() => undefined);
     return () => {
-      isMounted = false;
+      cancelled = true;
+      if (activeSocket) {
+        activeSocket.off('balanceUpdated', handleBalanceUpdate);
+        activeSocket.off('adminNotification', handleAdminNotification);
+      }
     };
   }, [checkSession]);
 
@@ -593,7 +592,7 @@ const styles = StyleSheet.create({
   logoutText: { color: '#6B7280', fontWeight: '500' },
   footerText: { color: '#888', fontSize: 12 },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.4)',
     zIndex: 10,
   },

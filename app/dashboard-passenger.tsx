@@ -7,7 +7,7 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../presentation/store/AuthStore';
 import LoadingOverlay from '../presentation/components/shared/LoadingOverlay';
-import { connectSocket } from './socket/socketClient';
+import { connectSocket } from '../services/socketClient';
 import ProfileAvatar from '../components/ProfileAvatar';
 import ToastNotification from '../presentation/components/shared/toastNotification';
 
@@ -111,14 +111,19 @@ const DashboardPassengerScreen = () => {
   };
 
   useEffect(() => {
-    const setupSocket = async () => {
-      const socket = await connectSocket();
-      const handleBalanceUpdate = () => { checkSession(); };
-      socket.on('balanceUpdated', handleBalanceUpdate);
-      return () => { socket.off('balanceUpdated', handleBalanceUpdate); };
+    let cancelled = false;
+    let activeSocket: Awaited<ReturnType<typeof connectSocket>> | null = null;
+    const handleBalanceUpdate = () => { void checkSession(); };
+    connectSocket().then((connectedSocket) => {
+      if (cancelled) return;
+      activeSocket = connectedSocket;
+      connectedSocket.on('balanceUpdated', handleBalanceUpdate);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      activeSocket?.off('balanceUpdated', handleBalanceUpdate);
     };
-    setupSocket();
-  }, []);
+  }, [checkSession]);
 
   const handleKYCRequired = () => {
     showToast('Verificacion requerido: Debes verificar tu identidad primero.');
@@ -246,7 +251,7 @@ const styles = StyleSheet.create({
   logoutBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   logoutText: { color: '#6B7280', fontWeight: '500' },
   footerText: { color: '#888', fontSize: 12 },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 10 },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 10 },
   menuPanel: { position: 'absolute', top: 0, left: 0, bottom: 0, width: MENU_WIDTH, backgroundColor: '#FFFFFF', zIndex: 20, borderTopRightRadius: 24, borderBottomRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 15, paddingTop: 60 },
   menuHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 20, borderBottomWidth: 1, borderColor: '#E5F5F0', marginBottom: 8 },
   menuAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#E6FFFA', justifyContent: 'center', alignItems: 'center' },

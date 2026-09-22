@@ -12,6 +12,10 @@ import { apiClient } from '../../apis/Client';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
+// Marcadores embebidos para que A/B carguen también en producción sin recursos externos.
+const originPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#00A884" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#00A884">A</text></svg>')}`;
+const destinationPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#D99A00" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#D99A00">B</text></svg>')}`;
+
 interface TripDetail {
   id: string;
   pickup_lat: number;
@@ -83,7 +87,8 @@ const TripDetailScreen = () => {
       if (response.result) {
         router.replace({ pathname: '/driver/active-trip', params: { tripId } });
       } else {
-        Alert.alert('Error', 'No se pudo aceptar el viaje');
+        Alert.alert('Viaje no disponible', 'Otro conductor ya aceptó este viaje. La lista se actualizará al volver.');
+        router.back();
       }
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -121,13 +126,13 @@ const TripDetailScreen = () => {
           new google.maps.Marker({
             position: origin,
             map: map,
-            icon: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png',
+             icon: '${originPinIcon}',
             title: 'Origen'
           });
           new google.maps.Marker({
             position: destination,
             map: map,
-            icon: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
+             icon: '${destinationPinIcon}',
             title: 'Destino'
           });
           directionsService.route({

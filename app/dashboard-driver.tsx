@@ -8,7 +8,7 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../presentation/store/AuthStore';
 import LoadingOverlay from '../presentation/components/shared/LoadingOverlay';
-import { connectSocket } from './socket/socketClient';
+import { connectSocket } from '../services/socketClient';
 import ToastNotification from '../presentation/components/shared/toastNotification';
 import { apiClient } from '../apis/Client';
 import ProfileAvatar from '../components/ProfileAvatar';
@@ -115,14 +115,19 @@ const DashboardDriverScreen = () => {
   };
 
   useEffect(() => {
-    const setupSocket = async () => {
-      const socket = await connectSocket();
-      const handleBalanceUpdate = () => { checkSession(); };
-      socket.on('balanceUpdated', handleBalanceUpdate);
-      return () => { socket.off('balanceUpdated', handleBalanceUpdate); };
+    let cancelled = false;
+    let activeSocket: Awaited<ReturnType<typeof connectSocket>> | null = null;
+    const handleBalanceUpdate = () => { void checkSession(); };
+    connectSocket().then((connectedSocket) => {
+      if (cancelled) return;
+      activeSocket = connectedSocket;
+      connectedSocket.on('balanceUpdated', handleBalanceUpdate);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      activeSocket?.off('balanceUpdated', handleBalanceUpdate);
     };
-    setupSocket();
-  }, []);
+  }, [checkSession]);
 
   const handleKYCRequired = () => {
     showToast('KYC requerido: Debes verificar tu identidad primero.');
@@ -138,6 +143,23 @@ const DashboardDriverScreen = () => {
       if (res.result && res.content) {
         const doc = res.content;
         if (doc.documentacion_status === 'approved' && doc.inspeccion_fisica_aprobada) {
+          if (destination === '/driver/find-trip') {
+            try {
+              const payment = await apiClient<{ result: boolean; content: { bankName?: string; cedula?: string; phone?: string } | null }>('/private/bank-account');
+              if (payment.result && payment.content?.bankName && payment.content?.cedula && payment.content?.phone) {
+                router.push(destination as any);
+                return;
+              }
+            } catch {
+              // El backend también valida esta condición al listar y aceptar.
+            }
+            if (destination === '/driver/find-trip') {
+              // Usar el popup común evita que la alerta nativa desaparezca o corte el flujo visual.
+              showToast('Registra tus datos de pago móvil antes de buscar o aceptar viajes.');
+              router.push('/bank-account');
+              return;
+            }
+          }
           router.push(destination as any);
         } else {
           Alert.alert('Documentación requerida', 'Debes tener tu documentación aprobada e inspección física.');
@@ -297,7 +319,7 @@ const styles = StyleSheet.create({
   logoutBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   logoutText: { color: '#6B7280', fontWeight: '500' },
   footerText: { color: '#888', fontSize: 12 },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 10 },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 10 },
   menuPanel: { position: 'absolute', top: 0, left: 0, bottom: 0, width: MENU_WIDTH, backgroundColor: '#FFFFFF', zIndex: 20, borderTopRightRadius: 24, borderBottomRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 15, paddingTop: 60 },
   menuHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 20, borderBottomWidth: 1, borderColor: '#E5F5F0', marginBottom: 8 },
   menuAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#E6FFFA', justifyContent: 'center', alignItems: 'center' },

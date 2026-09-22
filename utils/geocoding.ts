@@ -1,5 +1,6 @@
 // LEIDO
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
+import { sanitizeReadableAddress } from './address';
 
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
   try {
@@ -8,7 +9,7 @@ export const reverseGeocode = async (lat: number, lng: number): Promise<string> 
     );
     const json = await res.json();
     if (json.status === 'OK' && json.results[0]) {
-      return json.results[0].formatted_address;
+      return sanitizeReadableAddress(json.results[0].formatted_address);
     }
   } catch (e) {}
   return 'Dirección no encontrada';

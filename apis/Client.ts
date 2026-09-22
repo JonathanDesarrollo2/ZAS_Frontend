@@ -1,5 +1,6 @@
 // LEIDO
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { sanitizeAddressFields } from '../utils/address';
 
 // La URL viene EXCLUSIVAMENTE de la variable de entorno definida en eas.json
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -43,5 +44,5 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
     throw new Error(errorMessage);
   }
 
-  return data;
+  return sanitizeAddressFields(data);
 }

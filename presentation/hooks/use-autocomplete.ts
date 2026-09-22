@@ -1,6 +1,7 @@
 // LEIDO
 import { useState, useCallback } from 'react';
 import { getPlaceDetails } from '../../utils/geocoding';
+import { sanitizeReadableAddress } from '../../utils/address';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
@@ -29,7 +30,10 @@ export function useAutocomplete(userLocation?: { lat: number; lng: number }) {
       const json = await res.json();
       console.log('Google Places response:', json.status, json.predictions?.length);  // <-- verifica en consola
       if (json.status === 'OK') {
-        setSuggestions(json.predictions.map((p: any) => ({ description: p.description, placeId: p.place_id })));
+        setSuggestions(json.predictions.map((p: any) => ({
+          description: sanitizeReadableAddress(p.description),
+          placeId: p.place_id,
+        })));
         setShowSuggestions(true);
       } else {
         console.warn('Places API error:', json.status, json.error_message);

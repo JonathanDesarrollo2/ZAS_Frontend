@@ -1,17 +1,9 @@
 // LEIDO
-import { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet, Image, Text } from 'react-native';
-import { router } from 'expo-router'
-import { useAuth } from '../presentation/store/AuthStore';   // ← importa useAuth
+import { useAuth } from '../presentation/store/AuthStore';
 
 const IndexScreen = () => {
-  const { isLoading, isAuthenticated } = useAuth();
-
-  useEffect(() => {
-    if (!isLoading) {
-      router.replace(isAuthenticated ? '/dashboard' : '/auth/Login');
-    }
-  }, [isLoading, isAuthenticated]);
+  const { isLoading } = useAuth();
 
   return (
     <View style={styles.container}>

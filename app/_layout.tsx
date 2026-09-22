@@ -1,16 +1,13 @@
 // LEIDO
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts, SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 import { Stack, router, useRootNavigationState, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
-import { useColorScheme } from '../presentation/hooks/use-color-scheme';
 import { useAuth } from '../presentation/store/AuthStore';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   const [loaded, error] = useFonts({ SpaceMono: SpaceMono_400Regular });
   const { isAuthenticated, user, isLoading } = useAuth();
   const initialize = useAuth((state) => state.initialize);
@@ -18,6 +15,7 @@ export default function RootLayout() {
   const segments = useSegments();
   const previousAuthState = useRef<{ isAuthenticated: boolean; isEmailVerified: boolean } | null>(null);
   const justVerified = useRef(false);
+  const initialized = useRef(false);
 
   useEffect(() => {
     if (loaded) {
@@ -29,6 +27,8 @@ export default function RootLayout() {
   }, [loaded]);
 
   useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
     initialize();
   }, [initialize]);
 
@@ -89,7 +89,6 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'light' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" options={{ animation: 'none' }} />
         <Stack.Screen name="auth/Login" options={{ animation: 'fade' }} />
@@ -120,8 +119,7 @@ export default function RootLayout() {
         <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
 
         {/* NUEVAS RUTAS PARA COMERCIOS */}
-        <Stack.Screen name="merchant-application" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="restaurants" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="merchant/merchant-application" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="restaurant-menu" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="cart" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="checkout" options={{ animation: 'slide_from_right' }} />
@@ -136,6 +134,5 @@ export default function RootLayout() {
 
         <Stack.Screen name="history" options={{ animation: 'slide_from_right' }} />
       </Stack>
-    </ThemeProvider>
   );
 }

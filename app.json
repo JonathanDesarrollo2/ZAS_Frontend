@@ -2,7 +2,7 @@
   "expo": {
     "name": "ZAS",
     "slug": "Zas_Frontend",
-    "version": "1.0.7",
+    "version": "1.0.10",
     "orientation": "default",
     "icon": "./assets/images/logo.png",
     "scheme": "zasfrontend",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.zas.frontend",
-      "versionCode": 1005,
+      "versionCode": 1011,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#98FFD9",
@@ -39,6 +39,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
@@ -57,11 +58,13 @@
             "enableShrinkResourcesInReleaseBuilds": true
           }
         }
-      ]
+      ],
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     },
     "extra": {
       "router": {},

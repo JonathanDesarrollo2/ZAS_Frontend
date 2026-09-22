@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { connectSocket, getSocket } from './socket/socketClient';
+import { connectSocket, getSocket, ensurePersistentTripNotification, clearPersistentTripNotification } from '../services/socketClient';
 import { apiClient } from '../apis/Client';
 import { cancelTrip } from '../apis/trips';
 
@@ -27,6 +27,14 @@ const TripWaitingScreen = () => {
     ).start();
 
     setupSocketAndPolling();
+    // Mantener visible la búsqueda aunque el pasajero salga o bloquee el teléfono.
+    if (tripId) {
+      ensurePersistentTripNotification(
+        tripId,
+        'Buscando conductor',
+        'Tu solicitud sigue activa. Te avisaremos cuando sea aceptada.',
+      ).catch(() => undefined);
+    }
 
     // ✅ Cancelar viaje si el pasajero retrocede o cierra la app
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -39,9 +47,10 @@ const TripWaitingScreen = () => {
               setCancelling(true);
               try {
                 await cancelTrip(tripId!);
+                await clearPersistentTripNotification();
                 router.replace('/dashboard');
-              } catch (err) {
-                Alert.alert('Error', 'No se pudo cancelar el viaje');
+              } catch (err: any) {
+                Alert.alert('Error', err?.message || 'No se pudo cancelar el viaje');
                 setCancelling(false);
               }
             }
@@ -143,9 +152,10 @@ const TripWaitingScreen = () => {
     setCancelling(true);
     try {
       await cancelTrip(tripId!);
+      await clearPersistentTripNotification();
       router.replace('/dashboard');
-    } catch (err) {
-      Alert.alert('Error', 'No se pudo cancelar el viaje');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'No se pudo cancelar el viaje');
       setCancelling(false);
     }
   };
