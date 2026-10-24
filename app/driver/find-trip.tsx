@@ -19,6 +19,7 @@ interface Trip {
   price: number;
   vehicle_type: string;
   status: string;
+  trip_type?: 'ride' | 'delivery';
   passenger?: {
     username?: string;
     userlogin: string;
@@ -187,6 +188,12 @@ const FindTripsScreen = () => {
       onPress={() => router.push({ pathname: '/driver/trip-detail', params: { tripId: item.id } })}
       activeOpacity={0.8}
     >
+      {item.trip_type === 'delivery' && (
+        <View style={styles.deliveryBadge}>
+          <MaterialCommunityIcons name="package-variant-closed" size={16} color="#FFFFFF" />
+          <Text style={styles.deliveryBadgeText}>Viaje de Entrega</Text>
+        </View>
+      )}
       <View style={styles.routeRow}>
         <Feather name="circle" size={14} color="#00C9A7" />
         <Text style={styles.address}>{sanitizeReadableAddress(item.pickup_address)}</Text>
@@ -258,6 +265,8 @@ const styles = StyleSheet.create({
   address: { color: '#1F2937', fontSize: 16, fontWeight: '500', marginLeft: 12, flex: 1 },
   dottedLine: { height: 20, borderLeftWidth: 2, borderColor: '#E5E7EB', marginLeft: 6, marginVertical: 4 },
   infoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginBottom: 8 },
+  deliveryBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#00C9A7', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10 },
+  deliveryBadgeText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12 },
   infoText: { color: '#374151', fontSize: 14 },
   emptyState: { alignItems: 'center', marginTop: 40 },
   emptyText: { fontSize: 18, color: '#6B7280', fontWeight: '600', marginTop: 16 },

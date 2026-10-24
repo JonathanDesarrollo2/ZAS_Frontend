@@ -11,7 +11,16 @@ import { apiClient } from '../apis/Client';
 import { cancelTrip } from '../apis/trips';
 
 const TripWaitingScreen = () => {
-  const { tripId } = useLocalSearchParams<{ tripId: string }>();
+  const { tripId, isScheduled, scheduledAt } = useLocalSearchParams<{
+    tripId: string;
+    isScheduled?: string;
+    scheduledAt?: string;
+  }>();
+  const scheduledTrip = isScheduled === 'true';
+  const scheduledDate = scheduledAt ? new Date(scheduledAt) : null;
+  const scheduledLabel = scheduledDate && Number.isFinite(scheduledDate.getTime())
+    ? scheduledDate.toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' })
+    : '';
   const [cancelling, setCancelling] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -31,8 +40,10 @@ const TripWaitingScreen = () => {
     if (tripId) {
       ensurePersistentTripNotification(
         tripId,
-        'Buscando conductor',
-        'Tu solicitud sigue activa. Te avisaremos cuando sea aceptada.',
+        scheduledTrip ? 'Viaje programado' : 'Buscando conductor',
+        scheduledTrip
+          ? `Te avisaremos cuando tu viaje esté disponible para conductores${scheduledLabel ? ` (${scheduledLabel})` : ''}.`
+          : 'Tu solicitud sigue activa. Te avisaremos cuando sea aceptada.',
       ).catch(() => undefined);
     }
 
@@ -164,10 +175,14 @@ const TripWaitingScreen = () => {
     <View style={styles.screen}>
       <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
         <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-          <Feather name="loader" size={48} color="#00C9A7" />
+          <Feather name={scheduledTrip ? 'calendar' : 'loader'} size={48} color="#00C9A7" />
         </Animated.View>
-        <Text style={styles.title}>Buscando mototaxi</Text>
-        <Text style={styles.subtitle}>Espera a que un conductor acepte tu viaje...</Text>
+        <Text style={styles.title}>{scheduledTrip ? 'Viaje programado' : 'Buscando mototaxi'}</Text>
+        <Text style={styles.subtitle}>
+          {scheduledTrip
+            ? `Se publicará a los conductores 15 minutos antes${scheduledLabel ? `: ${scheduledLabel}` : '.'}`
+            : 'Espera a que un conductor acepte tu viaje...'}
+        </Text>
         <TouchableOpacity style={styles.cancelButton} onPress={handleCancel} disabled={cancelling}>
           <Feather name="x-circle" size={20} color="#FF6B6B" style={{ marginRight: 8 }} />
           <Text style={styles.cancelText}>Cancelar viaje</Text>

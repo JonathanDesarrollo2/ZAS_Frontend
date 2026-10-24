@@ -7,6 +7,8 @@ import {
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../presentation/store/AuthStore';
+import LegalDocumentModal from '../../components/LegalDocumentModal';
+import { GENERAL_TERMS, LEGAL_TERMS_VERSION, PRIVACY_POLICY } from '../../legal/LegalTexts';
 
 // ---------- Toast ----------
 const Toast = ({ message, type = 'error', visible, onHide }: { message: string; type?: 'error' | 'success'; visible: boolean; onHide: () => void }) => {
@@ -48,7 +50,9 @@ const RegisterScreen = () => {
   const [password, setPassword] = useState('');
   const [repass, setRepass] = useState('');
   const [nivel, setNivel] = useState(3);
-  const { register, isLoading, isAuthenticated } = useAuth();
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
+  const [legalDocument, setLegalDocument] = useState<'terms' | 'privacy' | null>(null);
+  const { register, isLoading } = useAuth();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -58,13 +62,6 @@ const RegisterScreen = () => {
       Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
   }, []);
-
-  // Redirigir al dashboard cuando la sesión esté activa después del registro
-  useEffect(() => {
-    if (isAuthenticated) {
-      router.replace('/dashboard');  // ← cambiado: antes era /auth/VerifyEmail
-    }
-  }, [isAuthenticated]);
 
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
@@ -83,6 +80,7 @@ const RegisterScreen = () => {
     if (!password) return showToast('La contraseña es requerida');
     if (password.length < 6) return showToast('La contraseña debe tener al menos 6 caracteres');
     if (password !== repass) return showToast('Las contraseñas no coinciden');
+    if (!acceptedLegal) return showToast('Debes aceptar los Términos y Condiciones y la Política de Privacidad');
 
     try {
       await register({
@@ -92,6 +90,8 @@ const RegisterScreen = () => {
         userpass: password,
         userrepass: repass,
         nivel,
+        termsAccepted: true,
+        privacyAccepted: true,
       });
     } catch (err: any) {
       let msg = err?.message || 'Error al registrarse';
@@ -131,6 +131,22 @@ const RegisterScreen = () => {
             ))}
           </View>
 
+          <TouchableOpacity
+            style={styles.legalAcceptance}
+            onPress={() => setAcceptedLegal((accepted) => !accepted)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: acceptedLegal }}
+          >
+            <Feather name={acceptedLegal ? 'check-square' : 'square'} size={21} color={acceptedLegal ? '#00C9A7' : '#6B7280'} />
+            <Text style={styles.legalText}>
+              He leído y acepto los{' '}
+              <Text style={styles.legalLink} onPress={() => setLegalDocument('terms')}>Términos y Condiciones</Text>
+              {' '}y la{' '}
+              <Text style={styles.legalLink} onPress={() => setLegalDocument('privacy')}>Política de Privacidad</Text>.
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.legalVersion}>Versión {LEGAL_TERMS_VERSION}</Text>
+
           <TouchableOpacity onPress={handleRegister} disabled={isLoading} activeOpacity={0.8} style={[styles.btn, isLoading && { opacity: 0.7 }]}>
             {isLoading ? <Text style={styles.btnText}>Registrando...</Text> : <><Text style={styles.btnText}>Registrarse</Text><Feather name="arrow-right" size={20} color="#fff" style={{ marginLeft: 8 }} /></>}
           </TouchableOpacity>
@@ -140,6 +156,12 @@ const RegisterScreen = () => {
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
+      <LegalDocumentModal
+        visible={legalDocument !== null}
+        title={legalDocument === 'privacy' ? 'Política de Privacidad' : 'Términos y Condiciones'}
+        content={legalDocument === 'privacy' ? PRIVACY_POLICY : GENERAL_TERMS}
+        onClose={() => setLegalDocument(null)}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -159,6 +181,10 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 16, color: '#111827' },
   roleLabel: { fontWeight: '600', color: '#374151', marginBottom: 12, marginTop: 4 },
+  legalAcceptance: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginBottom: 5 },
+  legalText: { flex: 1, color: '#4B5563', fontSize: 13, lineHeight: 20 },
+  legalLink: { color: '#008F79', fontWeight: '700' },
+  legalVersion: { color: '#9CA3AF', fontSize: 11, marginLeft: 30, marginBottom: 18 },
   roleCard: { flex: 1, paddingVertical: 14, marginHorizontal: 4, borderRadius: 14, borderWidth: 2, alignItems: 'center' },
   btn: {
     backgroundColor: '#00C9A7', borderRadius: 16, height: 52,

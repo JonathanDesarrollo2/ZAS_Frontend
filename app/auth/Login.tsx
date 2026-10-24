@@ -136,9 +136,9 @@ const LoginScreen = () => {
             style={{ marginTop: 24 }}
           >
             <Text style={styles.affiliateLink}>
-              ¿Quieres vender en ZAS?{' '}
+              ¿Tienes un local de comida?{' '}
               <Text style={{ color: '#00C9A7', fontWeight: '700' }}>
-                Afíliate como comercio
+                Afíliate
               </Text>
             </Text>
           </TouchableOpacity>

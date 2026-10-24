@@ -12,11 +12,12 @@ import { connectSocket } from '../services/socketClient';
 import ToastNotification from '../presentation/components/shared/toastNotification';
 import { apiClient } from '../apis/Client';
 import ProfileAvatar from '../components/ProfileAvatar';
+import { getMyMarketplaceProducts } from '../apis/marketplace';
 
 type FeatherIconName =
-  | 'search' | 'plus-circle' | 'list' | 'truck' | 'toggle-right'
+  | 'search' | 'plus-circle' | 'list' | 'truck' | 'toggle-right' | 'navigation'
   | 'chevron-right' | 'bell' | 'log-out' | 'menu'
-  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'mail';
+  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'mail' | 'dollar-sign' | 'package';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.75;
@@ -73,6 +74,7 @@ const DashboardDriverScreen = () => {
   }, []);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [hasSellerProducts, setHasSellerProducts] = useState(false);
   const menuSlide = useRef(new Animated.Value(-MENU_WIDTH)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
 
@@ -100,6 +102,20 @@ const DashboardDriverScreen = () => {
     setToastType(type);
     setToastVisible(true);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    getMyMarketplaceProducts()
+      .then((response) => {
+        if (active && response.result) {
+          setHasSellerProducts(Array.isArray(response.content) && response.content.length > 0);
+        }
+      })
+      .catch(() => {
+        if (active) showToast('No se pudo comprobar tu inventario de Marketplace');
+      });
+    return () => { active = false; };
+  }, [showToast]);
 
   const handleLogout = async () => {
     closeMenu();
@@ -182,6 +198,9 @@ const DashboardDriverScreen = () => {
       <ServiceCard icon="plus-circle" title="Publicar viaje" desc="Crea un viaje con cupos disponibles"
         onPress={() => checkDocsAndNavigate('/driver/create-ride')} disabled={!isKYC} />
       <View style={styles.separator} />
+      <ServiceCard icon="navigation" title="Publicar taxi compartido" desc="Ofrece puestos en tu próximo viaje"
+        onPress={() => checkDocsAndNavigate('/driver/create-shared-ride')} disabled={!isKYC} />
+      <View style={styles.separator} />
       <ServiceCard icon="list" title="Mis viajes" desc="Gestiona los viajes que has creado"
         onPress={isKYC ? () => router.push('/driver/my-rides') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
@@ -228,6 +247,11 @@ const DashboardDriverScreen = () => {
           <MenuItem icon="shield" label="Verificación" onPress={() => { closeMenu(); router.push('/verification' as any); }} />
           <MenuItem icon="mail" label="Verificar correo" onPress={() => { closeMenu(); router.push('/auth/VerifyEmail'); }} />
           <MenuItem icon="file-text" label="Historial" onPress={() => { closeMenu(); showToast('Historial próximamente', 'error'); }} />
+          <MenuItem icon="dollar-sign" label="Mis Ganancias" onPress={() => { closeMenu(); router.push('/driver/earnings'); }} />
+          {hasSellerProducts && <>
+            <MenuItem icon="package" label="Mis Productos" onPress={() => { closeMenu(); router.push('/marketplace/my-products'); }} />
+            <MenuItem icon="package" label="Mis Ventas" onPress={() => { closeMenu(); router.push('/marketplace/sales'); }} />
+          </>}
           <MenuItem icon="credit-card" label="Cuenta Bancaria" onPress={() => { closeMenu(); router.push('/bank-account' as any); }} />
           <View style={styles.menuDivider} />
           <MenuItem icon="log-out" label="Cerrar sesión" onPress={handleLogout} />

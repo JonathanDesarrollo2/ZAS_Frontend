@@ -16,12 +16,13 @@ import { getActiveTrip } from '../apis/trips';
 import { getAppConfig } from '../apis/appConfig';
 import ProfileAvatar from '../components/ProfileAvatar';
 import UpdateRequiredModal from '../components/updateRequiredModal';
+import { getMyMarketplaceProducts } from '../apis/marketplace';
 
 type FeatherIconName =
   | 'search' | 'plus-circle' | 'list' | 'truck' | 'toggle-right'
   | 'chevron-right' | 'bell' | 'log-out' | 'menu'
   | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'mail'
-  | 'alert-triangle' | 'clock' | 'navigation' | 'package' | 'map-pin';
+  | 'alert-triangle' | 'clock' | 'navigation' | 'package' | 'map-pin' | 'shopping-bag';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.75;
@@ -82,6 +83,8 @@ const DashboardScreen = () => {
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   const [recentTrips, setRecentTrips] = useState<any[]>([]);
+  const [hasSellerProducts, setHasSellerProducts] = useState(false);
+  const [marketplaceNotificationPending, setMarketplaceNotificationPending] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -119,6 +122,20 @@ const DashboardScreen = () => {
     setToastVisible(true);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    getMyMarketplaceProducts()
+      .then((response) => {
+        if (active && response.result) {
+          setHasSellerProducts(Array.isArray(response.content) && response.content.length > 0);
+        }
+      })
+      .catch(() => {
+        if (active) showToast('No se pudo comprobar tu inventario de Marketplace');
+      });
+    return () => { active = false; };
+  }, [showToast]);
+
   const handleLogout = async () => {
     closeMenu();
     setSpinnerVisible(true);
@@ -142,12 +159,23 @@ const DashboardScreen = () => {
     const handleAdminNotification = (_data: any) => {
       // La notificación se guarda en el historial local por el cliente socket.
     };
+    const handleMarketplaceNewOrder = () => {
+      setMarketplaceNotificationPending(true);
+      showToast('Tienes una nueva orden en Marketplace', 'success');
+    };
+    const handleMarketplaceMessage = (data: { seller_id?: string }) => {
+      if (String(data.seller_id) !== String(user?.id)) return;
+      setMarketplaceNotificationPending(true);
+      showToast('Tienes un nuevo mensaje en una venta', 'success');
+    };
     const setupSocket = async () => {
       const socket = await connectSocket();
       if (cancelled) return;
       activeSocket = socket;
       socket.on('balanceUpdated', handleBalanceUpdate);
       socket.on('adminNotification', handleAdminNotification);
+      socket.on('marketplace:new_order', handleMarketplaceNewOrder);
+      socket.on('marketplace:message', handleMarketplaceMessage);
     };
     setupSocket().catch(() => undefined);
     return () => {
@@ -155,30 +183,40 @@ const DashboardScreen = () => {
       if (activeSocket) {
         activeSocket.off('balanceUpdated', handleBalanceUpdate);
         activeSocket.off('adminNotification', handleAdminNotification);
+        activeSocket.off('marketplace:new_order', handleMarketplaceNewOrder);
+        activeSocket.off('marketplace:message', handleMarketplaceMessage);
       }
     };
-  }, [checkSession]);
+  }, [checkSession, showToast, user?.id]);
 
-  // ✅ Verificar versión mínima
-      useEffect(() => {
-        const checkVersion = async () => {
-          try {
-            const config = await getAppConfig();
-            const packageJson = require('../package.json');
-            const currentVersion = packageJson.version;
-            const necesitaActualizar = config.min_version && compareVersions(currentVersion, config.min_version) < 0;
-            if (necesitaActualizar) {
-              setUpdateUrl(config.update_url || '');
-              setUpdateModalVisible(true);
-            } else {
-              setUpdateModalVisible(false); // 👈 Esto asegura que se oculte
-            }
-          } catch (e) {
-            // Silencioso
-          }
-        };
-        checkVersion();
-      }, []);
+  useEffect(() => {
+    let active = true;
+    const checkVersion = async () => {
+      const profilePictureUrl = typeof user?.profile_pic_url === 'string'
+        ? user.profile_pic_url.trim()
+        : '';
+      if (!user?.id || !profilePictureUrl) {
+        setUpdateModalVisible(false);
+        return;
+      }
+
+      try {
+        const config = await getAppConfig();
+        const packageJson = require('../package.json');
+        const comparison = compareVersions(packageJson.version, config.min_version);
+        if (!active || comparison === null) return;
+
+        const needsUpdate = comparison < 0;
+        const updateUrl = typeof config.update_url === 'string' ? config.update_url.trim() : '';
+        setUpdateUrl(needsUpdate ? updateUrl : '');
+        setUpdateModalVisible(needsUpdate && updateUrl.length > 0);
+      } catch {
+        if (active) setUpdateModalVisible(false);
+      }
+    };
+    void checkVersion();
+    return () => { active = false; };
+  }, [user?.id, user?.profile_pic_url]);
 
   const hasRedirectedTripRef = useRef(false);
 
@@ -191,12 +229,12 @@ const DashboardScreen = () => {
         if (res.result && res.content) {
           hasRedirectedTripRef.current = true;
           const trip = res.content;
-          if (user.nivel === 2) {
+          if (user?.nivel === 2) {
             router.replace({
               pathname: '/driver/active-trip',
               params: { tripId: trip.id },
             });
-          } else if (user.nivel === 3) {
+          } else if (user?.nivel === 3) {
             router.replace({
               pathname: '/trip-active',
               params: {
@@ -221,8 +259,10 @@ const DashboardScreen = () => {
     const fetchRecentTrips = async () => {
       try {
         const res = await apiClient<{ result: boolean; content: any[] }>('/private/trips/history');
-        if (res.result) {
-          setRecentTrips(res.content);
+        if (res.result && Array.isArray(res.content)) {
+          setRecentTrips(res.content.filter((trip) => trip && typeof trip === 'object'));
+        } else {
+          setRecentTrips([]);
         }
       } catch (err) {
         // silencioso
@@ -278,6 +318,14 @@ const DashboardScreen = () => {
       />
       <View style={styles.separator} />
       <ServiceCard
+        icon="navigation"
+        title="Publicar taxi compartido"
+        desc="Ofrece puestos en tu próximo viaje"
+        onPress={() => checkDocsAndNavigate('/driver/create-shared-ride')}
+        disabled={!isKYC}
+      />
+      <View style={styles.separator} />
+      <ServiceCard
         icon="list"
         title="Mis viajes"
         desc="Gestiona los viajes que has creado"
@@ -325,7 +373,15 @@ const DashboardScreen = () => {
         icon="package"
         title="Delivery"
         desc="Pide comida a negocios locales"
-        onPress={isKYC ? () => router.push('/merchant/restaurant') : handleKYCRequired}
+        onPress={isKYC ? () => router.push('/restaurants') : handleKYCRequired}
+        disabled={!isKYC}
+      />
+      <View style={styles.separator} />
+      <ServiceCard
+        icon="shopping-bag"
+        title="MarketPlace"
+        desc="Compra y vende productos"
+        onPress={isKYC ? () => router.push('/marketplace') : handleKYCRequired}
         disabled={!isKYC}
       />
       <View style={styles.separator} />
@@ -398,6 +454,18 @@ const DashboardScreen = () => {
               router.push('/history');
             }}
           />
+          {hasSellerProducts && <>
+            <MenuItem
+              icon="package"
+              label="Mis Productos"
+              onPress={() => { closeMenu(); router.push('/marketplace/my-products'); }}
+            />
+            <MenuItem
+              icon="shopping-bag"
+              label="Mis Ventas"
+              onPress={() => { closeMenu(); router.push('/marketplace/sales'); }}
+            />
+          </>}
           <MenuItem
             icon="credit-card"
             label="Datos de pago móvil"
@@ -418,8 +486,15 @@ const DashboardScreen = () => {
           </TouchableOpacity>
           <LogoIcon />
           <View style={{ flex: 1 }} />
-          <TouchableOpacity onPress={() => router.push('/notifications')} style={{ marginLeft: 16 }}>
+          <TouchableOpacity
+            onPress={() => {
+              setMarketplaceNotificationPending(false);
+              router.push('/notifications');
+            }}
+            style={{ marginLeft: 16 }}
+          >
             <Feather name="bell" size={24} color="#1F2937" />
+            {marketplaceNotificationPending && <View style={styles.notificationDot} />}
           </TouchableOpacity>
         </View>
 
@@ -435,7 +510,7 @@ const DashboardScreen = () => {
             {!isKYC && (
               <View style={styles.compactWarning}>
                 <Feather name="alert-triangle" size={16} color="#FF9800" />
-                <Text style={styles.compactWarningText}>KYC pendiente</Text>
+                <Text style={styles.compactWarningText}>Identificacion de identidad pendiente</Text>
                 <TouchableOpacity onPress={() => router.push('/auth/kyc')}>
                   <Text style={styles.compactLink}>Verificar</Text>
                 </TouchableOpacity>
@@ -465,23 +540,27 @@ const DashboardScreen = () => {
             </View>
           ) : (
             <View style={styles.tripsContainer}>
-              {recentTrips.slice(0, 2).map((trip) => (
-                <View key={trip.id} style={styles.tripCard}>
+              {recentTrips.slice(0, 2).map((trip, index) => (
+                <View key={trip.id || `recent-trip-${index}`} style={styles.tripCard}>
                   <View style={styles.tripHeader}>
-                    {trip.counterpartPicUrl ? (
-                      <Image source={{ uri: trip.counterpartPicUrl }} style={styles.tripAvatar} />
+                    {typeof trip.counterpartPicUrl === 'string' && trip.counterpartPicUrl.trim() ? (
+                      <Image source={{ uri: trip.counterpartPicUrl }} style={styles.tripAvatar} onError={() => undefined} />
                     ) : (
                       <Feather name="user" size={24} color="#9CA3AF" style={styles.tripAvatarPlaceholder} />
                     )}
-                    <Text style={styles.tripName}>{trip.counterpartName}</Text>
-                    <Text style={styles.tripPrice}>${Number(trip.price).toFixed(2)}</Text>
+                    <Text style={styles.tripName}>{trip.counterpartName || 'Usuario'}</Text>
+                    <Text style={styles.tripPrice}>
+                      {Number.isFinite(Number(trip.price)) ? `$${Number(trip.price).toFixed(2)}` : '—'}
+                    </Text>
                   </View>
                   <View style={styles.tripRoute}>
-                    <Text style={styles.tripAddress}>📍 {trip.origin_address}</Text>
-                    <Text style={styles.tripAddress}>🏁 {trip.destination_address}</Text>
+                    <Text style={styles.tripAddress}>📍 {trip.origin_address || 'Origen no disponible'}</Text>
+                    <Text style={styles.tripAddress}>🏁 {trip.destination_address || 'Destino no disponible'}</Text>
                   </View>
                   <Text style={styles.tripDate}>
-                    {new Date(trip.createdAt).toLocaleDateString()}
+                    {trip.createdAt && Number.isFinite(new Date(trip.createdAt).getTime())
+                      ? new Date(trip.createdAt).toLocaleDateString()
+                      : 'Fecha no disponible'}
                   </Text>
                 </View>
               ))}
@@ -513,10 +592,14 @@ const DashboardScreen = () => {
   );
 };
 
-function compareVersions(a: string, b: string): number {
-  const normalize = (v: string) => v.replace(/^v/i, '').split('.').map(Number);
+function compareVersions(a: string, b: string): number | null {
+  const normalize = (version: unknown): number[] | null => {
+    if (typeof version !== 'string' || !/^[vV]?\d+(?:\.\d+)*$/.test(version.trim())) return null;
+    return version.trim().replace(/^v/i, '').split('.').map(Number);
+  };
   const pa = normalize(a);
   const pb = normalize(b);
+  if (!pa || !pb || [...pa, ...pb].some((part) => !Number.isSafeInteger(part))) return null;
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const na = pa[i] || 0;
     const nb = pb[i] || 0;
@@ -530,6 +613,15 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   mainContainer: { flex: 1, paddingHorizontal: 20, paddingTop: 60 },
   topBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
+  notificationDot: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+  },
   logoImage: {
     width: 70,
     height: 70,

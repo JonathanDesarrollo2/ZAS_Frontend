@@ -2,7 +2,7 @@
   "expo": {
     "name": "ZAS",
     "slug": "Zas_Frontend",
-    "version": "1.0.10",
+    "version": "1.0.15",
     "orientation": "default",
     "icon": "./assets/images/logo.png",
     "scheme": "zasfrontend",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.zas.frontend",
-      "versionCode": 1011,
+      "versionCode": 1023,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#98FFD9",
@@ -41,6 +41,14 @@
       "expo-router",
       "expo-notifications",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "ZAS necesita acceso a la cámara para tomar tu foto de perfil.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#98FFD9",
@@ -61,7 +69,8 @@
       ],
       "expo-image",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

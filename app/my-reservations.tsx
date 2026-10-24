@@ -1,6 +1,6 @@
 // LEIDO
 // app/my-reservations.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -17,26 +18,30 @@ const MyReservationsScreen = () => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadReservations();
-  }, []);
-
-  const loadReservations = async () => {
+  const loadReservations = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getMyReservations();
       setReservations(data);
     } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'No se pudieron cargar tus reservas');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { void loadReservations(); }, 0);
+    return () => clearTimeout(timer);
+  }, [loadReservations]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending_payment': return '#FFA500';
       case 'paid': return '#00C9A7';
       case 'verified': return '#00C9A7';
+      case 'picked_up': return '#00C9A7';
+      case 'completed': return '#059669';
       case 'expired': return '#FF6B6B';
       case 'cancelled': return '#9CA3AF';
       default: return '#333';
@@ -48,6 +53,8 @@ const MyReservationsScreen = () => {
       case 'pending_payment': return 'Pendiente de pago';
       case 'paid': return 'Pagado';
       case 'verified': return 'Verificado';
+      case 'picked_up': return 'En viaje';
+      case 'completed': return 'Completado';
       case 'expired': return 'Expirado';
       case 'cancelled': return 'Cancelado';
       default: return status;
@@ -105,6 +112,18 @@ const MyReservationsScreen = () => {
         >
           <Feather name="credit-card" size={18} color="#fff" style={{ marginRight: 8 }} />
           <Text style={styles.payButtonText}>Ir a pagar</Text>
+        </TouchableOpacity>
+      )}
+      {(item.status === 'verified' || item.status === 'picked_up' || item.status === 'completed') && (
+        <TouchableOpacity
+          style={styles.activeRideButton}
+          onPress={() => router.push({
+            pathname: '/shared-rides/active/[reservationId]',
+            params: { reservationId: item.id },
+          })}
+        >
+          <Feather name="map" size={17} color="#FFFFFF" style={{ marginRight: 8 }} />
+          <Text style={styles.payButtonText}>Ver viaje en el mapa</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -191,6 +210,15 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   payButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+  activeRideButton: {
+    backgroundColor: '#00C9A7',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0FDF9' },
   emptyState: { alignItems: 'center', marginTop: 60 },
   emptyText: { fontSize: 18, color: '#6B7280', fontWeight: '600', marginTop: 16 },

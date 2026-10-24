@@ -10,9 +10,10 @@ import LoadingOverlay from '../presentation/components/shared/LoadingOverlay';
 import { connectSocket } from '../services/socketClient';
 import ProfileAvatar from '../components/ProfileAvatar';
 import ToastNotification from '../presentation/components/shared/toastNotification';
+import { getMyMarketplaceProducts } from '../apis/marketplace';
 
 type FeatherIconName =
-  | 'navigation' | 'package' | 'map-pin' | 'chevron-right' | 'bell' | 'log-out' | 'menu'
+  | 'navigation' | 'package' | 'map-pin' | 'shopping-bag' | 'chevron-right' | 'bell' | 'log-out' | 'menu'
   | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'mail';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -69,6 +70,7 @@ const DashboardPassengerScreen = () => {
   }, []);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [hasSellerProducts, setHasSellerProducts] = useState(false);
   const menuSlide = useRef(new Animated.Value(-MENU_WIDTH)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
 
@@ -96,6 +98,20 @@ const DashboardPassengerScreen = () => {
     setToastType(type);
     setToastVisible(true);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    getMyMarketplaceProducts()
+      .then((response) => {
+        if (active && response.result) {
+          setHasSellerProducts(Array.isArray(response.content) && response.content.length > 0);
+        }
+      })
+      .catch(() => {
+        if (active) showToast('No se pudo comprobar tu inventario de Marketplace');
+      });
+    return () => { active = false; };
+  }, [showToast]);
 
   const handleLogout = async () => {
     closeMenu();
@@ -137,6 +153,9 @@ const DashboardPassengerScreen = () => {
       <ServiceCard icon="package" title="Delivery" desc="Pide comida a negocios locales"
         onPress={isKYC ? () => showToast('Próximamente', 'success') : handleKYCRequired} disabled={!isKYC} />
       <View style={styles.separator} />
+      <ServiceCard icon="shopping-bag" title="MarketPlace" desc="Compra y vende productos"
+        onPress={isKYC ? () => router.push('/marketplace') : handleKYCRequired} disabled={!isKYC} />
+      <View style={styles.separator} />
       <ServiceCard icon="map-pin" title="Pedir Taxi" desc="Solicita un viaje ahora"
         onPress={isKYC ? () => router.push('/request-ride') : handleKYCRequired} disabled={!isKYC} />
     </>
@@ -169,6 +188,10 @@ const DashboardPassengerScreen = () => {
           <MenuItem icon="shield" label="Verificación" onPress={() => { closeMenu(); router.push('/verification' as any); }} />
           <MenuItem icon="mail" label="Verificar correo" onPress={() => { closeMenu(); router.push('/auth/VerifyEmail'); }} />
           <MenuItem icon="file-text" label="Historial" onPress={() => { closeMenu(); showToast('Historial próximamente', 'error'); }} />
+          {hasSellerProducts && <>
+            <MenuItem icon="package" label="Mis Productos" onPress={() => { closeMenu(); router.push('/marketplace/my-products'); }} />
+            <MenuItem icon="shopping-bag" label="Mis Ventas" onPress={() => { closeMenu(); router.push('/marketplace/sales'); }} />
+          </>}
           <MenuItem icon="credit-card" label="Cuenta Bancaria" onPress={() => { closeMenu(); router.push('/bank-account' as any); }} />
           <View style={styles.menuDivider} />
           <MenuItem icon="log-out" label="Cerrar sesión" onPress={handleLogout} />

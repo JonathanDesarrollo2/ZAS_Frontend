@@ -1,4 +1,3 @@
-// LEIDO
 import React, { useState } from 'react';
 import {
   View,
@@ -17,7 +16,11 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
-import { submitMerchantApplication } from '../../apis/merchant';
+import * as FileSystem from 'expo-file-system/legacy';
+import { getToken } from '../../apis/Client';
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ||
+  'https://zas-backend-112404045385.us-central1.run.app/api';
 
 const LEGAL_TERMS = `TÉRMINOS Y CONDICIONES PARA COMERCIOS ZAS
 
@@ -50,7 +53,6 @@ const MerchantApplicationScreen = () => {
   const [businessAddress, setBusinessAddress] = useState('');
   const [hasOwnDelivery, setHasOwnDelivery] = useState(false);
   const [rifDocument, setRifDocument] = useState<any>(null);
-  const [otherDocs, setOtherDocs] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -69,18 +71,36 @@ const MerchantApplicationScreen = () => {
     }
   };
 
-  const pickOtherDocuments = async () => {
+  // 🚨 SOLUCIÓN MAESTRA: Leer vía fetch (evita bloqueos de permisos de Android)
+  const safeFileUri = async (uri: string, defaultName: string) => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
-        multiple: true,
-        copyToCacheDirectory: true,
+      // 1. fetch al archivo (el motor de red SÍ tiene permisos de lectura de WhatsApp)
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      // 2. Convertir Blob a Base64 usando FileReader
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1]); // Quitar el prefijo "data:image/jpeg;base64,"
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
       });
-      if (!result.canceled && result.assets?.length > 0) {
-        setOtherDocs(result.assets);
-      }
+
+      // 3. Guardar en la carpeta privada de la app (100% legible)
+      const extension = defaultName.split('.').pop() || 'jpg';
+      const newUri = `${FileSystem.documentDirectory}${Date.now()}_safe.${extension}`;
+      
+      await FileSystem.writeAsStringAsync(newUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      return newUri;
     } catch (error) {
-      Alert.alert('Error', 'No se pudieron seleccionar los documentos');
+      console.error('Error copiando archivo:', error);
+      throw new Error('No se pudo procesar el archivo seleccionado.');
     }
   };
 
@@ -108,29 +128,40 @@ const MerchantApplicationScreen = () => {
 
     setSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.append('owner_name', ownerName.trim());
-      formData.append('owner_email', ownerEmail.trim().toLowerCase());
-      formData.append('phone', phone.trim());
-      formData.append('business_name', businessName.trim());
-      formData.append('business_address', businessAddress.trim());
-      formData.append('has_own_delivery', hasOwnDelivery ? 'true' : 'false');
+      const token = await getToken();
+      
+      // 1. Sanitizar el archivo
+      const safeUri = await safeFileUri(
+        rifDocument.uri, 
+        rifDocument.name || 'rif.jpg'
+      );
 
-      formData.append('rif_document', {
-        uri: rifDocument.uri,
-        type: rifDocument.mimeType || 'application/pdf',
-        name: rifDocument.name || 'rif.pdf',
-      } as any);
-
-      otherDocs.forEach((doc, index) => {
-        formData.append('documents', {
-          uri: doc.uri,
-          type: doc.mimeType || 'application/pdf',
-          name: doc.name || `document_${index}.pdf`,
-        } as any);
+      // 2. Subir con FileSystem.uploadAsync
+      const uploadUrl = `${BASE_URL.replace(/\/+$/, '')}/public/merchant-applications`;
+      
+      const uploadResponse = await FileSystem.uploadAsync(uploadUrl, safeUri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'rif_document',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        parameters: {
+          owner_name: ownerName.trim(),
+          owner_email: ownerEmail.trim().toLowerCase(),
+          phone: phone.trim(),
+          business_name: businessName.trim(),
+          business_address: businessAddress.trim(),
+          has_own_delivery: hasOwnDelivery ? 'true' : 'false',
+        },
       });
 
-      await submitMerchantApplication(formData);
+      const data = JSON.parse(uploadResponse.body);
+
+      if (uploadResponse.status < 200 || uploadResponse.status >= 300 || !data.result) {
+        throw new Error(data.error?.[0] || 'Error al enviar la solicitud');
+      }
 
       Alert.alert(
         'Solicitud enviada',
@@ -138,6 +169,7 @@ const MerchantApplicationScreen = () => {
         [{ text: 'Entendido', onPress: () => router.back() }]
       );
     } catch (err: any) {
+      console.error('Error en subida nativa:', err);
       Alert.alert('Error', err.message || 'No se pudo enviar la solicitud');
     } finally {
       setSubmitting(false);
@@ -147,12 +179,17 @@ const MerchantApplicationScreen = () => {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
     >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView 
+        contentContainerStyle={styles.container} 
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
-          <Feather name="briefcase" size={48} color="#00C9A7" />
-          <Text style={styles.title}>Afíliate como comercio</Text>
+          <Feather name="shopping-bag" size={48} color="#00C9A7" />
+          <Text style={styles.title}>Registra tu restaurante</Text>
           <Text style={styles.subtitle}>
             Completa el formulario y adjunta los documentos requeridos. Nuestro equipo revisará tu solicitud.
           </Text>
@@ -245,19 +282,6 @@ const MerchantApplicationScreen = () => {
           </View>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Documentos adicionales (opcional, máx. 5)</Text>
-          <TouchableOpacity style={styles.docButton} onPress={pickOtherDocuments}>
-            <Feather name="upload" size={16} color="#00C9A7" style={{ marginRight: 8 }} />
-            <Text style={styles.docButtonText}>
-              {otherDocs.length > 0
-                ? `${otherDocs.length} documento(s) seleccionado(s)`
-                : 'Adjuntar PDFs o imágenes'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Términos y condiciones */}
         <View style={styles.termsContainer}>
           <TouchableOpacity
             style={styles.termsRow}
@@ -297,7 +321,6 @@ const MerchantApplicationScreen = () => {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Modal de términos */}
       <Modal
         visible={showTerms}
         animationType="slide"
@@ -333,7 +356,7 @@ const MerchantApplicationScreen = () => {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
-  container: { padding: 20, paddingTop: 80, paddingBottom: 40 },
+  container: { padding: 20, paddingTop: 80, paddingBottom: 120 }, // Aumenté el paddingBottom para el teclado
   header: { alignItems: 'center', marginBottom: 30 },
   title: { fontSize: 26, fontWeight: '700', color: '#1F2937', marginTop: 16 },
   subtitle: {
@@ -405,17 +428,6 @@ const styles = StyleSheet.create({
     height: 50,
   },
   toggleLabel: { fontSize: 15, color: '#374151', fontWeight: '500' },
-  docButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F7FA',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 48,
-    borderWidth: 1,
-    borderColor: '#00C9A7',
-  },
-  docButtonText: { color: '#00C9A7', fontWeight: '600', flex: 1, marginLeft: 4 },
   termsContainer: {
     marginBottom: 20,
     marginTop: 4,

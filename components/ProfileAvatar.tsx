@@ -16,6 +16,7 @@ import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../presentation/store/AuthStore';
 import { getToken } from '../apis/Client';
+import { uploadProfilePicture } from '../apis/auth';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -34,7 +35,7 @@ const ProfileAvatar: React.FC<Props> = ({ size = 50 }) => {
   const launchPicker = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      setAlertMessage('Necesitas dar acceso a la galería para cambiar la foto.');
+      setAlertMessage('Necesitas dar acceso a la galeria para cambiar la foto.');
       setCanChange(false);
       setShowAlert(true);
       return;
@@ -47,51 +48,39 @@ const ProfileAvatar: React.FC<Props> = ({ size = 50 }) => {
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets?.length > 0) {
-      setUploading(true);
-      try {
-        const asset = result.assets[0];
-        const formData = new FormData();
-        formData.append('profile_pic', {
-          uri: asset.uri,
-          type: asset.mimeType || 'image/jpeg',
-          name: (asset as any).fileName || 'profile.jpg',
-        } as any);
+    if (result.canceled || !result.assets?.length) return;
 
-        const token = await getToken();
-        if (!token) throw new Error('No hay token de autenticación');
+    setUploading(true);
+    try {
+      const asset = result.assets[0];
+      const imageUri = typeof asset.uri === 'string' ? asset.uri.trim() : '';
+      if (!imageUri) throw new Error('La imagen seleccionada no tiene una ruta valida.');
 
-        const baseUrl = process.env.EXPO_PUBLIC_API_URL;
-        if (!baseUrl) throw new Error('API URL no configurada');
-
-        const response = await fetch(`${baseUrl}/private/user/profile-pic`, {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        });
-        const data = await response.json();
-
-        if (data.result) {
-          // Actualizar store con la nueva foto y fecha
-          useAuth.setState((prev) => ({
-            user: {
-              ...prev.user!,
-              profile_pic_url: data.content.url,
-              profile_pic_updated_at: new Date().toISOString(),
-            },
-          }));
-        } else {
-          setAlertMessage(data.error?.[0] || 'No se pudo subir la foto');
-          setCanChange(false);
-          setShowAlert(true);
-        }
-      } catch (error: any) {
-        setAlertMessage(error.message);
-        setCanChange(false);
-        setShowAlert(true);
-      } finally {
-        setUploading(false);
+      const mimeType = typeof asset.mimeType === 'string' && asset.mimeType.startsWith('image/')
+        ? asset.mimeType
+        : 'image/jpeg';
+      const extension = mimeType === 'image/png' ? 'png' : 'jpg';
+      const fileName = typeof asset.fileName === 'string' && asset.fileName.trim()
+        ? asset.fileName.trim()
+        : `profile-${Date.now()}.${extension}`;
+      const data = await uploadProfilePicture(imageUri, mimeType, fileName);
+      if (!data.result || !data.content?.url) {
+        throw new Error(data.error?.[0] || 'No se pudo subir la foto.');
       }
+
+      useAuth.setState((prev) => prev.user ? ({
+        user: {
+          ...prev.user,
+          profile_pic_url: data.content!.url!,
+          profile_pic_updated_at: new Date().toISOString(),
+        },
+      }) : prev);
+    } catch (error) {
+      setAlertMessage(error instanceof Error ? error.message : 'No se pudo subir la foto.');
+      setCanChange(false);
+      setShowAlert(true);
+    } finally {
+      setUploading(false);
     }
   };
 

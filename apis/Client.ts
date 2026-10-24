@@ -2,6 +2,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sanitizeAddressFields } from '../utils/address';
 
+export class ApiClientError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = 'ApiClientError';
+  }
+}
+
 // La URL viene EXCLUSIVAMENTE de la variable de entorno definida en eas.json
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -23,8 +30,9 @@ export const removeToken = async () => {
 
 export async function apiClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken();
+  const isMultipartBody = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
+    ...(!isMultipartBody && { 'Content-Type': 'application/json' }),
     ...(token && { Authorization: `Bearer ${token}` }),
     ...(options.headers as Record<string, string>),
   };
@@ -41,7 +49,7 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
 
   if (!response.ok) {
     const errorMessage = data.error?.[0] || 'Error desconocido';
-    throw new Error(errorMessage);
+    throw new ApiClientError(errorMessage, response.status);
   }
 
   return sanitizeAddressFields(data);

@@ -2,10 +2,12 @@
 import {
   View, Text, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, TextInput
 } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
-import { reserveSeat } from '../../apis/sharedRides';
+import { Feather } from '@expo/vector-icons';
+import { getMyReservations, reserveSeat } from '../../apis/sharedRides';
 import { apiClient } from '../../apis/Client';
+import MapSelector from '../../presentation/components/shared/mapSelector';
 
 interface RideDetail {
   id: string;
@@ -17,7 +19,9 @@ interface RideDetail {
   trunk_full: boolean;
   departure_time?: string;
   status: string;
-  price?: number; // precio por puesto (opcional)
+  price?: number | string; // precio por puesto (opcional)
+  origin_lat: number | string;
+  origin_lng: number | string;
   driver: { username?: string; userlogin: string };
 }
 
@@ -27,17 +31,12 @@ const RideDetailScreen = () => {
   const [loading, setLoading] = useState(true);
   const [seatCount, setSeatCount] = useState('1');
   const [reserving, setReserving] = useState(false);
+  const [dropoffAddress, setDropoffAddress] = useState('');
+  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [dropoffNotes, setDropoffNotes] = useState('');
+  const [mapVisible, setMapVisible] = useState(false);
 
-  useEffect(() => {
-    if (!id || id === 'index') {
-      Alert.alert('Error', 'ID de viaje inválido');
-      router.back();
-      return;
-    }
-    fetchRideDetail();
-  }, [id]);
-
-  const fetchRideDetail = async () => {
+  const fetchRideDetail = useCallback(async () => {
     try {
       const response = await apiClient<{ result: boolean; content: RideDetail }>(`/private/rides/${id}`);
       setRide(response.content);
@@ -46,7 +45,17 @@ const RideDetailScreen = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (!id || id === 'index') {
+      Alert.alert('Error', 'ID de viaje inválido');
+      router.back();
+      return;
+    }
+    const timer = setTimeout(() => { void fetchRideDetail(); }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchRideDetail, id]);
 
   const handleReserve = async () => {
     const seats = parseInt(seatCount);
@@ -56,7 +65,15 @@ const RideDetailScreen = () => {
     }
     setReserving(true);
     try {
-      const result = await reserveSeat(id!, seats);
+      if (!dropoffCoords || !dropoffAddress.trim()) {
+        Alert.alert('Destino requerido', 'Marca tu destino exacto en el mapa antes de reservar.');
+        return;
+      }
+      const result = await reserveSeat(id!, seats, {
+        ...dropoffCoords,
+        address: dropoffAddress.trim(),
+        notes: dropoffNotes.trim() || undefined,
+      });
       // Navegar a la pantalla de pago con los IDs obtenidos
       router.push({
         pathname: '/payment',
@@ -69,16 +86,29 @@ const RideDetailScreen = () => {
       // Si el error es por reserva existente (409), intentamos obtener la reserva activa y redirigir
       if (error.message.includes('409') || error.message.includes('activa')) {
         try {
-          const myReservations = await apiClient<{ result: boolean; content: any[] }>('/private/rides/my-reservations');
-          const active = myReservations.content.find((r: any) => r.ride_id === id && (r.status === 'pending_payment' || r.status === 'paid'));
-          if (active) {
-            router.push({
-              pathname: '/payment',
-              params: { rideId: id!, reservationId: active.id },
-            });
+            const myReservations = await getMyReservations();
+            const active = myReservations.find((r) => r.ride_id === id && (
+              r.status === 'pending_payment' || r.status === 'paid' ||
+              r.status === 'verified' || r.status === 'picked_up' || r.status === 'completed'
+            ));
+            if (active) {
+              if (active.status === 'verified' || active.status === 'picked_up' || active.status === 'completed') {
+                router.push({
+                  pathname: '/shared-rides/active/[reservationId]',
+                  params: { reservationId: active.id },
+                });
+                return;
+              }
+              router.push({
+                pathname: '/payment',
+                params: { rideId: id!, reservationId: active.id },
+              });
+              return;
+            }
+          } catch (lookupError) {
+            Alert.alert('Error', lookupError instanceof Error ? lookupError.message : 'No se pudo consultar tu reserva');
             return;
           }
-        } catch (e) {}
       }
       Alert.alert('Error', error.message || 'No se pudo completar la reserva');
     } finally {
@@ -136,6 +166,30 @@ const RideDetailScreen = () => {
               onChangeText={setSeatCount}
               maxLength={2}
             />
+            <Text style={styles.label}>Tu destino exacto:</Text>
+            <TouchableOpacity style={styles.mapButton} onPress={() => setMapVisible(true)}>
+              <Feather name="map-pin" size={18} color="#00C9A7" />
+              <Text style={styles.mapButtonText}>
+                {dropoffAddress || 'Buscar y marcar destino en el mapa'}
+              </Text>
+            </TouchableOpacity>
+            {!!dropoffCoords && (
+              <TextInput
+                style={styles.input}
+                value={dropoffAddress}
+                onChangeText={setDropoffAddress}
+                placeholder="Nombre del lugar, por ejemplo: El Traki"
+                placeholderTextColor="#9CA3AF"
+              />
+            )}
+            <TextInput
+              style={styles.notesInput}
+              value={dropoffNotes}
+              onChangeText={setDropoffNotes}
+              placeholder="Indicaciones adicionales (opcional)"
+              placeholderTextColor="#9CA3AF"
+              multiline
+            />
             <TouchableOpacity
               style={styles.reserveButton}
               onPress={handleReserve}
@@ -154,6 +208,19 @@ const RideDetailScreen = () => {
           </View>
         )}
       </View>
+      <MapSelector
+        visible={mapVisible}
+        initialCoords={{
+          lat: Number(ride.origin_lat),
+          lng: Number(ride.origin_lng),
+        }}
+        onConfirm={(address, lat, lng) => {
+          setDropoffAddress(address);
+          setDropoffCoords({ lat, lng });
+          setMapVisible(false);
+        }}
+        onCancel={() => setMapVisible(false)}
+      />
     </View>
   );
 };
@@ -187,6 +254,26 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+  },
+  mapButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#ECFDF8',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  mapButtonText: { flex: 1, color: '#1F2937', fontSize: 14 },
+  notesInput: {
+    minHeight: 48,
+    backgroundColor: '#F5F7FA',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+    color: '#111827',
+    marginBottom: 16,
   },
   reserveButton: {
     backgroundColor: '#00C9A7',

@@ -123,10 +123,19 @@ const SharedRidesListScreen = () => {
             {isDriver && (
               <TouchableOpacity
                 style={styles.emptyButton}
-                onPress={() => router.push('/driver/create-ride')}
+                onPress={() => router.push('/driver/create-shared-ride')}
               >
                 <Feather name="plus-circle" size={18} color="#fff" style={{ marginRight: 8 }} />
                 <Text style={styles.emptyButtonText}>Publicar viaje</Text>
+              </TouchableOpacity>
+            )}
+            {isDriver && rides.length > 0 && (
+              <TouchableOpacity
+                style={styles.publishButton}
+                onPress={() => router.push('/driver/create-shared-ride')}
+              >
+                <Feather name="plus" size={18} color="#FFFFFF" />
+                <Text style={styles.emptyButtonText}>Publicar taxi compartido</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -210,6 +219,17 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   emptyButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+  publishButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 18,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#00C9A7',
+  },
 });
 
 export default SharedRidesListScreen;

@@ -17,7 +17,7 @@ import {
   getVerificationStatus,
 } from '../../apis/Verification';
 import { getFCMToken } from '../../services/notifications';
-import { getToken } from '../../apis/Client';
+import { ApiClientError, getToken } from '../../apis/Client';
 import { connectSocket } from '../../services/socketClient';
 
 interface User {
@@ -28,8 +28,14 @@ interface User {
   balance?: number;
   isEmailVerified: boolean;
   isKYCVerified: boolean;
+  profile_pic?: string | null;
   profile_pic_url?: string | null;
   profile_pic_updated_at?: Date | string | null;
+  terms_version?: string | null;
+  privacy_policy_version?: string | null;
+  legal_accepted_at?: Date | string | null;
+  marketplace_terms_version?: string | null;
+  marketplace_terms_accepted_at?: Date | string | null;
 }
 
 interface AuthState {
@@ -54,6 +60,19 @@ interface AuthState {
 }
 
 const SESSION_EXPIRATION_DAYS = 7;
+
+const normalizeBalance = (balance: unknown): number => {
+  const numericBalance = Number(balance);
+  return Number.isFinite(numericBalance) ? numericBalance : 0;
+};
+
+const normalizeDisplayValue = (value: unknown, fallback = ''): string =>
+  typeof value === 'string' && value.trim() ? value.trim() : fallback;
+
+const normalizeUserLevel = (level: unknown): number => {
+  const numericLevel = Number(level);
+  return Number.isFinite(numericLevel) ? numericLevel : 3;
+};
 
 export const useAuth = create<AuthState>((set, get) => ({
   isAuthenticated: false,
@@ -84,14 +103,19 @@ export const useAuth = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         user: {
           id: decoded.id || '',
-          sesionUser: userData.sesionUser,
-          sesionEmail: userData.sesionEmail,
-          nivel: userData.nivel,
-          balance: userData.balance || 0,
+          sesionUser: normalizeDisplayValue(userData.sesionUser, 'Usuario'),
+          sesionEmail: normalizeDisplayValue(userData.sesionEmail),
+          nivel: normalizeUserLevel(userData.nivel),
+          balance: normalizeBalance(userData.balance),
           isEmailVerified: userData.isEmailVerified || false,
           isKYCVerified: userData.isKYCVerified || false,
-          profile_pic_url: userData.profile_pic_url || null,
+          profile_pic_url: normalizeDisplayValue(userData.profile_pic_url) || null,
           profile_pic_updated_at: userData.profile_pic_updated_at || null,
+          terms_version: userData.terms_version || null,
+          privacy_policy_version: userData.privacy_policy_version || null,
+          legal_accepted_at: userData.legal_accepted_at || null,
+          marketplace_terms_version: userData.marketplace_terms_version || null,
+          marketplace_terms_accepted_at: userData.marketplace_terms_accepted_at || null,
         },
         isLoading: false,
       });
@@ -100,8 +124,17 @@ export const useAuth = create<AuthState>((set, get) => ({
       connectSocket().catch(() => {}); // ← conectar socket globalmente
       get().updatePushToken();
     } catch (error) {
-      await AsyncStorage.removeItem('authToken');
-      set({ isLoading: false, isAuthenticated: false, user: null });
+      if (error instanceof ApiClientError && error.status === 401) {
+        await AsyncStorage.removeItem('authToken');
+        set({ isLoading: false, isAuthenticated: false, user: null, error: error.message });
+        return;
+      }
+      set({
+        isLoading: false,
+        isAuthenticated: false,
+        user: null,
+        error: error instanceof Error ? error.message : 'No se pudo validar la sesión.',
+      });
     }
   },
 
@@ -122,14 +155,19 @@ export const useAuth = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         user: {
           id: userId,
-          sesionUser: userData.sesionUser,
-          sesionEmail: userData.sesionEmail,
-          nivel: userData.nivel,
-          balance: userData.balance || 0,
+          sesionUser: normalizeDisplayValue(userData.sesionUser, 'Usuario'),
+          sesionEmail: normalizeDisplayValue(userData.sesionEmail),
+          nivel: normalizeUserLevel(userData.nivel),
+          balance: normalizeBalance(userData.balance),
           isEmailVerified: userData.isEmailVerified || false,
           isKYCVerified: userData.isKYCVerified || false,
-          profile_pic_url: userData.profile_pic_url || null,
+          profile_pic_url: normalizeDisplayValue(userData.profile_pic_url) || null,
           profile_pic_updated_at: userData.profile_pic_updated_at || null,
+          terms_version: userData.terms_version || null,
+          privacy_policy_version: userData.privacy_policy_version || null,
+          legal_accepted_at: userData.legal_accepted_at || null,
+          marketplace_terms_version: userData.marketplace_terms_version || null,
+          marketplace_terms_accepted_at: userData.marketplace_terms_accepted_at || null,
         },
         isLoading: false,
       });
@@ -138,6 +176,10 @@ export const useAuth = create<AuthState>((set, get) => ({
       connectSocket().catch(() => {}); // ← conectar socket globalmente
       get().updatePushToken();
     } catch (error: any) {
+      if (error instanceof ApiClientError && error.status === 401) {
+        await AsyncStorage.removeItem('authToken');
+        set({ isAuthenticated: false, user: null });
+      }
       set({ error: error.message, isLoading: false });
       throw error;
     }
@@ -161,14 +203,19 @@ export const useAuth = create<AuthState>((set, get) => ({
           isAuthenticated: true,
           user: {
             id: userId,
-            sesionUser: userData.sesionUser,
-            sesionEmail: userData.sesionEmail,
-            nivel: userData.nivel,
-            balance: userData.balance || 0,
+            sesionUser: normalizeDisplayValue(userData.sesionUser, 'Usuario'),
+            sesionEmail: normalizeDisplayValue(userData.sesionEmail),
+            nivel: normalizeUserLevel(userData.nivel),
+            balance: normalizeBalance(userData.balance),
             isEmailVerified: userData.isEmailVerified || false,
             isKYCVerified: userData.isKYCVerified || false,
-            profile_pic_url: userData.profile_pic_url || null,
+            profile_pic_url: normalizeDisplayValue(userData.profile_pic_url) || null,
             profile_pic_updated_at: userData.profile_pic_updated_at || null,
+            terms_version: userData.terms_version || null,
+            privacy_policy_version: userData.privacy_policy_version || null,
+            legal_accepted_at: userData.legal_accepted_at || null,
+            marketplace_terms_version: userData.marketplace_terms_version || null,
+            marketplace_terms_accepted_at: userData.marketplace_terms_accepted_at || null,
           },
           isLoading: false,
         });
@@ -221,6 +268,11 @@ export const useAuth = create<AuthState>((set, get) => ({
           isKYCVerified: userData.isKYCVerified || false,
           profile_pic_url: userData.profile_pic_url || null,
           profile_pic_updated_at: userData.profile_pic_updated_at || null,
+          terms_version: userData.terms_version || null,
+          privacy_policy_version: userData.privacy_policy_version || null,
+          legal_accepted_at: userData.legal_accepted_at || null,
+          marketplace_terms_version: userData.marketplace_terms_version || null,
+          marketplace_terms_accepted_at: userData.marketplace_terms_accepted_at || null,
         },
         isLoading: false,
       });
@@ -228,8 +280,15 @@ export const useAuth = create<AuthState>((set, get) => ({
       await AsyncStorage.setItem('userNivel', String(userData.nivel));
       connectSocket().catch(() => {}); // ← conectar socket globalmente
     } catch (error: any) {
-      await AsyncStorage.removeItem('authToken');
-      set({ isAuthenticated: false, user: null, isLoading: false });
+      if (error instanceof ApiClientError && error.status === 401) {
+        await AsyncStorage.removeItem('authToken');
+        set({ isAuthenticated: false, user: null, isLoading: false, error: error.message });
+        return;
+      }
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'No se pudo actualizar la sesión.',
+      });
     }
   },
 

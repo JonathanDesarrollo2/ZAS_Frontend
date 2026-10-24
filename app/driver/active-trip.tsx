@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, Animated, TouchableOpacity,
-  BackHandler, Image, Modal,
+  BackHandler, Image, Modal, ScrollView, Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -11,11 +11,12 @@ import * as Location from 'expo-location';
 import { apiClient } from '../../apis/Client';
 import { connectSocket, ensurePersistentTripNotification, clearPersistentTripNotification } from '../../services/socketClient';
 import { getUnreadCount } from '../../apis/chat';
-import { verifyTripPayment, markArrived, startTrip, driverArrivedDestination, cancelTripByDriver } from '../../apis/trips';
-import { Feather } from '@expo/vector-icons';
+import { verifyTripPayment, markArrived, startTrip, driverArrivedDestination, cancelTripByDriver, markTripDeliveryPickedUp, markTripDeliveryDelivered } from '../../apis/trips';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import ToastNotification from '../../presentation/components/shared/toastNotification';
 import { useAuth } from '../../presentation/store/AuthStore';
 import { isChatOpen } from '../../services/chatPresence';
+import ReviewModal from '../../components/ReviewModal';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
@@ -23,6 +24,7 @@ const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 const driverPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#2563EB" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><circle cx="12" cy="9" r="1.5" fill="#2563EB"/></svg>')}`;
 const originPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#00A884" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#00A884">A</text></svg>')}`;
 const destinationPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#D99A00" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#D99A00">B</text></svg>')}`;
+const passengerPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#00C9A7" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><circle cx="12" cy="9" r="1.5" fill="#00C9A7"/></svg>')}`;
 
 interface TripData {
   id: string;
@@ -32,8 +34,11 @@ interface TripData {
   dropoff_lng: number;
   pickup_address: string;
   dropoff_address: string;
+  live_passenger_lat?: number | string | null;
+  live_passenger_lng?: number | string | null;
   price: number;
   status: string;
+  trip_type?: 'ride' | 'delivery';
   payment_method?: string;
   passenger?: {
     id?: string;
@@ -48,13 +53,29 @@ interface TripData {
   payer_phone?: string;
 }
 
+const distanceInMeters = (
+  first: { lat: number; lng: number },
+  second: { lat: number; lng: number },
+) => {
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const deltaLat = radians(second.lat - first.lat);
+  const deltaLng = radians(second.lng - first.lng);
+  const value = Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(radians(first.lat)) * Math.cos(radians(second.lat)) *
+    Math.sin(deltaLng / 2) ** 2;
+  const boundedValue = Math.min(1, Math.max(0, value));
+  return 6371000 * 2 * Math.atan2(Math.sqrt(boundedValue), Math.sqrt(1 - boundedValue));
+};
+
 const DriverActiveTripScreen = () => {
   const { user } = useAuth();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const [trip, setTrip] = useState<TripData | null>(null);
   const [loading, setLoading] = useState(true);
   const [driverLoc, setDriverLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [passengerLoc, setPassengerLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [passengerPic, setPassengerPic] = useState<string | null>(null);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
@@ -62,13 +83,40 @@ const DriverActiveTripScreen = () => {
   // Badge local de mensajes recibidos durante este viaje.
   const [unreadMessages, setUnreadMessages] = useState(0);
   const lastMessageNoticeAt = useRef(0);
+  const proximityAlertsShown = useRef(new Set<string>());
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const mapRef = useRef<WebView>(null);
+
+  useEffect(() => {
+    if (trip?.status === 'completed') setReviewModalVisible(true);
+  }, [trip?.status]);
 
   const showToast = (message: string, type: 'error' | 'success' = 'error') => {
     setToastMsg(message);
     setToastType(type);
     setToastVisible(true);
+  };
+
+  const handleDeliveryPickedUp = async () => {
+    try {
+      await markTripDeliveryPickedUp(tripId!);
+      showToast('Producto recibido. Ruta actualizada hacia el comprador.', 'success');
+      await fetchTripDetails();
+    } catch (err: any) {
+      showToast(err.message || 'No se pudo actualizar la entrega');
+    }
+  };
+
+  const handleDeliveryDelivered = async () => {
+    try {
+      await markTripDeliveryDelivered(tripId!);
+      await clearPersistentTripNotification();
+      showToast('Entrega completada', 'success');
+      await fetchTripDetails();
+      setTimeout(() => router.replace('/dashboard'), 800);
+    } catch (err: any) {
+      showToast(err.message || 'No se pudo completar la entrega');
+    }
   };
 
   // Polling cada 5 segundos
@@ -139,6 +187,13 @@ const DriverActiveTripScreen = () => {
   }, [driverLoc]);
 
   useEffect(() => {
+    if (!passengerLoc) return;
+    mapRef.current?.injectJavaScript(
+      `window.updatePassengerPosition && window.updatePassengerPosition(${passengerLoc.lat}, ${passengerLoc.lng}); true;`
+    );
+  }, [passengerLoc]);
+
+  useEffect(() => {
     const backAction = () => {
       if (trip && trip.status !== 'completed' && trip.status !== 'cancelled') {
          showToast('No puedes salir hasta que el viaje finalice.');
@@ -172,6 +227,16 @@ const DriverActiveTripScreen = () => {
         } else {
           setPassengerPic(null);
         }
+        const liveLat = Number(response.content.live_passenger_lat);
+        const liveLng = Number(response.content.live_passenger_lng);
+        if (response.content.live_passenger_lat != null && response.content.live_passenger_lng != null &&
+          Number.isFinite(liveLat) && Number.isFinite(liveLng)) {
+          setPassengerLoc((current) =>
+            current?.lat === liveLat && current.lng === liveLng
+              ? current
+              : { lat: liveLat, lng: liveLng }
+          );
+        }
       }
     } catch (err: any) {
       // Silencioso en polling
@@ -184,7 +249,7 @@ const DriverActiveTripScreen = () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setDriverLoc({ lat: 10.071866, lng: -66.869583 });
+        setDriverLoc(null);
         return;
       }
       const location = await Location.getCurrentPositionAsync({});
@@ -192,8 +257,8 @@ const DriverActiveTripScreen = () => {
         lat: location.coords.latitude,
         lng: location.coords.longitude,
       });
-    } catch (error) {
-      setDriverLoc({ lat: 10.071866, lng: -66.869583 });
+    } catch {
+      setDriverLoc(null);
     }
   };
 
@@ -209,6 +274,15 @@ const DriverActiveTripScreen = () => {
        };
       const handleCompleted = () => {
         fetchTripDetails();
+      };
+      const handlePassengerLocationUpdated = (data: {
+        tripId?: string;
+        lat?: number;
+        lng?: number;
+      }) => {
+        if (String(data.tripId) !== String(tripId) ||
+          !Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
+        setPassengerLoc({ lat: Number(data.lat), lng: Number(data.lng) });
       };
       const handleCancelled = (_data: any) => {
          showToast('El viaje ha sido cancelado.');
@@ -231,12 +305,14 @@ const DriverActiveTripScreen = () => {
          socket.on('tripPaymentUpdated', handlePaymentUpdated);
          socket.on('tripCompleted', handleCompleted);
          socket.on('tripCancelled', handleCancelled);
+         socket.on('passengerLocationUpdated', handlePassengerLocationUpdated);
          socket.on('chat:message', handleMessage);
          socket.on('chat:read', handleRead);
          return () => {
            socket.off('tripPaymentUpdated', handlePaymentUpdated);
            socket.off('tripCompleted', handleCompleted);
            socket.off('tripCancelled', handleCancelled);
+           socket.off('passengerLocationUpdated', handlePassengerLocationUpdated);
            socket.off('chat:message', handleMessage);
            socket.off('chat:read', handleRead);
          };
@@ -294,8 +370,56 @@ const DriverActiveTripScreen = () => {
     }
   };
 
+  useEffect(() => {
+    if (!trip || !driverLoc) return;
+    let promptKey: string | null = null;
+    let target: { lat: number; lng: number } | null = null;
+
+    if (trip.status === 'accepted') {
+      promptKey = `${trip.id}:pickup`;
+      const liveLat = passengerLoc?.lat ??
+        (trip.live_passenger_lat == null ? Number.NaN : Number(trip.live_passenger_lat));
+      const liveLng = passengerLoc?.lng ??
+        (trip.live_passenger_lng == null ? Number.NaN : Number(trip.live_passenger_lng));
+      target = Number.isFinite(liveLat) && Number.isFinite(liveLng)
+        ? { lat: liveLat, lng: liveLng }
+        : { lat: Number(trip.pickup_lat), lng: Number(trip.pickup_lng) };
+    } else if (trip.status === 'in_progress') {
+      promptKey = `${trip.id}:destination`;
+      target = { lat: Number(trip.dropoff_lat), lng: Number(trip.dropoff_lng) };
+    }
+
+    if (!promptKey || !target ||
+      !Number.isFinite(target.lat) || !Number.isFinite(target.lng) ||
+      proximityAlertsShown.current.has(promptKey) ||
+      distanceInMeters(driverLoc, target) > 50) return;
+
+    proximityAlertsShown.current.add(promptKey);
+    if (trip.status === 'accepted') {
+      Alert.alert(
+        'Punto de recogida',
+        '¿Ya llegaste con el pasajero? ¿Deseas marcar que ya estás en el punto de recogida?',
+        [
+          { text: 'Sí, marcar llegada', onPress: () => { void handleArrive(); } },
+          { text: 'Aún no', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Destino',
+      '¿Ya llegaste al destino? Puedes notificar la llegada para que el pasajero confirme el viaje.',
+      [
+        { text: 'Sí, notificar llegada', onPress: () => { void handleArriveDestination(); } },
+        { text: 'Aún no', style: 'cancel' },
+      ],
+    );
+  }, [driverLoc, passengerLoc, trip]);
+
   // La ruta cambia al destino desde que el backend marca el viaje en curso.
-  const isDestinationLeg = ['in_progress', 'arrived_destination'].includes(String(trip?.status || '').toLowerCase());
+  const isDestinationLeg = ['in_progress', 'arrived_destination'].includes(String(trip?.status || '').toLowerCase()) ||
+    (trip?.trip_type === 'delivery' && trip.status === 'picked_up');
   // CORRECCIÓN CLAVE: el backend guarda las coordenadas como DECIMAL y la API
   // las entrega como TEXTO ("10.1234567"). Al inyectarlas con JSON.stringify
   // quedaban con comillas ({"lat":"10.12"}) y Google DirectionsService las
@@ -324,6 +448,7 @@ const DriverActiveTripScreen = () => {
       <div id="map"></div>
       <script>
          let map, directionsService, driverMarker, pickupMarker, destinationMarker;
+         let pickupLeg = true;
          let activeRouteTarget, fallbackRouteOrigin;
          // La cámara solo se encuadra una vez por tramo; después se respeta el
          // zoom/centro que el conductor haya elegido manualmente.
@@ -337,10 +462,10 @@ const DriverActiveTripScreen = () => {
          let lastRerouteAt = 0;
          let driverAnim = null;
 
-        function createMarker(position, icon, title) {
+        function createMarker(position, icon, title, markerMap) {
            return new google.maps.Marker({
              position,
-             map,
+             map: markerMap === undefined ? map : markerMap,
              icon: { url: icon, anchor: new google.maps.Point(18, 36) },
              title,
            });
@@ -425,9 +550,38 @@ const DriverActiveTripScreen = () => {
           }
 
           function updateRouteTarget(lat, lng) {
-            if (!driverMarker) return;
+             if (!driverMarker) return;
              activeRouteTarget = { lat, lng };
              requestRoute(driverMarker.getPosition(), activeRouteTarget, fallbackRouteOrigin);
+          }
+
+          function updatePassengerPosition(lat, lng) {
+             if (!pickupMarker || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+              const passengerPosition = { lat, lng };
+              pickupMarker.setPosition(passengerPosition);
+              if (pickupLeg && activeRouteTarget &&
+                  distMeters(activeRouteTarget, passengerPosition) > 40 &&
+                  Date.now() - lastRerouteAt > 40000) {
+                lastRerouteAt = Date.now();
+                activeRouteTarget = passengerPosition;
+                requestRoute(driverMarker.getPosition(), activeRouteTarget, fallbackRouteOrigin);
+              }
+          }
+
+          function setTripStage(destinationLeg, lat, lng) {
+            const stageChanged = pickupLeg === destinationLeg;
+            pickupLeg = !destinationLeg;
+            if (pickupMarker) pickupMarker.setMap(destinationLeg ? null : map);
+            if (destinationMarker) destinationMarker.setMap(destinationLeg ? map : null);
+            if (stageChanged) {
+              routeViewportFitted = false;
+              routePath = [];
+              trimIndex = 0;
+              if (routePolyline) routePolyline.setPath([]);
+            }
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+              updateRouteTarget(lat, lng);
+            }
           }
 
         function initMap() {
@@ -436,6 +590,7 @@ const DriverActiveTripScreen = () => {
            const destinationPos = ${trip ? `{ lat: ${Number(trip.dropoff_lat)}, lng: ${Number(trip.dropoff_lng)} }` : 'null'};
             const activeOrigin = ${JSON.stringify(routeOrigin)};
             const activeTarget = ${JSON.stringify(routeTarget)};
+            pickupLeg = ${!isDestinationLeg};
             fallbackRouteOrigin = pickupPos;
             activeRouteTarget = activeTarget;
 
@@ -448,19 +603,26 @@ const DriverActiveTripScreen = () => {
 
            driverMarker = createMarker(driverPos, '${driverPinIcon}', 'Tú');
           if (pickupPos) {
-             pickupMarker = createMarker(pickupPos, '${originPinIcon}', 'Origen');
+             pickupMarker = createMarker(
+               pickupPos,
+               '${trip?.trip_type === 'delivery' ? originPinIcon : passengerPinIcon}',
+               '${trip?.trip_type === 'delivery' ? 'Origen' : 'Pasajero'}',
+               ${isDestinationLeg} ? null : map
+             );
           }
-           if (destinationPos && ${isDestinationLeg}) {
-              destinationMarker = createMarker(destinationPos, '${destinationPinIcon}', 'Destino');
+          if (destinationPos) {
+            destinationMarker = createMarker(
+              destinationPos,
+              '${destinationPinIcon}',
+              'Destino',
+              ${isDestinationLeg} ? map : null
+            );
           }
 
           directionsService = new google.maps.DirectionsService();
 
-           if (activeTarget) {
-              // La ruta principal parte del conductor. El punto de recogida solo
-              // evita perder la ruta si el GPS cae fuera de una vía válida.
-              requestRoute(activeOrigin, activeTarget, fallbackRouteOrigin);
-            }
+          // En recogida se muestra el pasajero; en curso se muestra el destino.
+          setTripStage(${isDestinationLeg}, activeTarget && activeTarget.lat, activeTarget && activeTarget.lng);
         }
 
          // Filtro de ruido GPS: un salto >180 km/h (50 m/s) respecto a la última
@@ -502,9 +664,16 @@ const DriverActiveTripScreen = () => {
     </body>
     </html>
   `
-    // Sin trip?.status en las dependencias: cambios de estado dentro del mismo
-    // tramo (accepted -> arrived) no regeneran el HTML ni recargan el mapa.
-    : '', [trip?.id, trip?.pickup_lat, trip?.pickup_lng, trip?.dropoff_lat, trip?.dropoff_lng, isDestinationLeg]);
+    // Los cambios de etapa se aplican por JavaScript para conservar el mapa cargado.
+    : '', [trip?.id, trip?.pickup_lat, trip?.pickup_lng, trip?.dropoff_lat, trip?.dropoff_lng, trip?.trip_type]);
+  const mapSource = useMemo(() => ({ html: mapHTML }), [mapHTML]);
+
+  useEffect(() => {
+    if (!trip) return;
+    mapRef.current?.injectJavaScript(
+      `window.setTripStage && window.setTripStage(${isDestinationLeg}, ${routeTarget.lat}, ${routeTarget.lng}); true;`
+    );
+  }, [isDestinationLeg, routeTarget.lat, routeTarget.lng, trip?.id]);
 
   if (loading || !mapDriverLocation) {
     return (
@@ -529,15 +698,48 @@ const DriverActiveTripScreen = () => {
   return (
     <View style={styles.screen}>
       <ToastNotification message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
+      <ReviewModal
+        visible={reviewModalVisible && trip.status === 'completed'}
+        tripId={trip.id}
+        revieweeId={trip.passenger?.id || ''}
+        reviewerRole="driver"
+        onClose={() => setReviewModalVisible(false)}
+        onSubmitted={() => showToast('Gracias por compartir tu experiencia', 'success')}
+      />
       <WebView
         ref={mapRef}
-        key={`${tripId}-${isDestinationLeg ? 'dropoff' : 'pickup'}`}
         style={styles.map}
-        source={{ html: mapHTML }}
+        source={mapSource}
         javaScriptEnabled
+        onLoadEnd={() => {
+          if (driverLoc) {
+            mapRef.current?.injectJavaScript(
+              `window.updateDriverPosition && window.updateDriverPosition(${driverLoc.lat}, ${driverLoc.lng}); true;`
+            );
+          }
+          if (passengerLoc) {
+            mapRef.current?.injectJavaScript(
+              `window.updatePassengerPosition && window.updatePassengerPosition(${passengerLoc.lat}, ${passengerLoc.lng}); true;`
+            );
+          }
+          mapRef.current?.injectJavaScript(
+            `window.setTripStage && window.setTripStage(${isDestinationLeg}, ${routeTarget.lat}, ${routeTarget.lng}); true;`
+          );
+        }}
       />
       <Animated.View style={[styles.card, { opacity: fadeAnim }]}>
-        <Text style={styles.title}>Datos del pasajero</Text>
+        <ScrollView
+          style={styles.cardScroll}
+          contentContainerStyle={styles.cardContent}
+          showsVerticalScrollIndicator
+        >
+        <Text style={styles.title}>{trip.trip_type === 'delivery' ? 'Datos de la entrega' : 'Datos del pasajero'}</Text>
+        {trip.trip_type === 'delivery' && (
+          <View style={styles.deliveryBadge}>
+            <MaterialCommunityIcons name="package-variant-closed" size={18} color="#FFFFFF" />
+            <Text style={styles.deliveryBadgeText}>Viaje de Entrega</Text>
+          </View>
+        )}
         <View style={styles.passengerRow}>
           {passengerPic ? (
             <TouchableOpacity onPress={() => setSelectedImage(passengerPic)}>
@@ -553,7 +755,13 @@ const DriverActiveTripScreen = () => {
         <Text style={styles.price}>💰 ${Number(trip.price).toFixed(2)}</Text>
 
         {/* Sección de pago según método */}
-        {isAppPayment ? (
+        {trip.trip_type === 'delivery' ? (
+          <View style={styles.paymentSection}>
+            <Text style={styles.subtitle}>Pago de la entrega</Text>
+            <Text style={styles.value}>El producto fue confirmado por el vendedor.</Text>
+            <Text style={styles.value}>Tarifa de entrega en efectivo: ${Number(trip.price).toFixed(2)}</Text>
+          </View>
+        ) : isAppPayment ? (
           <View style={styles.paymentSection}>
             <Text style={styles.subtitle}>Pago automático</Text>
             <Text style={styles.value}>El pasajero pagará con saldo de la app al finalizar.</Text>
@@ -599,9 +807,15 @@ const DriverActiveTripScreen = () => {
           </TouchableOpacity>
         )}
         {trip.status === 'arrived' && (
-          <TouchableOpacity style={styles.startBtn} onPress={handleStartTrip}>
-            <Feather name="user-check" size={18} color="#fff" />
-            <Text style={styles.btnText}> Pasajero a bordo</Text>
+          <TouchableOpacity style={styles.startBtn} onPress={trip.trip_type === 'delivery' ? handleDeliveryPickedUp : handleStartTrip}>
+            <Feather name={trip.trip_type === 'delivery' ? 'package' : 'user-check'} size={18} color="#fff" />
+            <Text style={styles.btnText}>{trip.trip_type === 'delivery' ? ' Producto Recibido' : ' Pasajero a bordo'}</Text>
+          </TouchableOpacity>
+        )}
+        {trip.trip_type === 'delivery' && trip.status === 'picked_up' && (
+          <TouchableOpacity style={styles.completeBtn} onPress={handleDeliveryDelivered}>
+            <Feather name="check-circle" size={18} color="#fff" />
+            <Text style={styles.btnText}> Entregado</Text>
           </TouchableOpacity>
         )}
         {trip.status === 'in_progress' && (
@@ -618,7 +832,7 @@ const DriverActiveTripScreen = () => {
         )}
 
         {/* Botón cancelar SIEMPRE (excepto finalizado/cancelado) */}
-        {['accepted', 'arrived', 'in_progress', 'arrived_destination'].includes(trip.status) && (
+        {trip.trip_type !== 'delivery' && ['accepted', 'arrived', 'in_progress', 'arrived_destination'].includes(trip.status) && (
           <TouchableOpacity
             style={[styles.completeBtn, { backgroundColor: '#FF5252', marginTop: 8 }]}
             onPress={handleCancelTrip}
@@ -654,6 +868,7 @@ const DriverActiveTripScreen = () => {
           <Feather name="home" size={20} color="#374151" />
           <Text style={styles.homeButtonText}> Volver al inicio</Text>
         </TouchableOpacity>
+        </ScrollView>
       </Animated.View>
 
       {/* Modal imagen */}
@@ -688,10 +903,12 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   map: { flex: 1 },
   card: {
-    backgroundColor: '#FFFFFF', margin: 20, padding: 20, borderRadius: 20,
+    backgroundColor: '#FFFFFF', height: '42%', margin: 12, padding: 0, borderRadius: 20,
     borderWidth: 1, borderColor: '#E5F5F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05, shadowRadius: 8, elevation: 3,
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 3, overflow: 'hidden',
   },
+  cardScroll: { flex: 1 },
+  cardContent: { padding: 16, paddingBottom: 24 },
   title: { fontSize: 20, fontWeight: '700', color: '#1F2937', marginBottom: 12 },
   subtitle: { fontSize: 18, fontWeight: '600', color: '#1F2937', marginTop: 12, marginBottom: 8 },
   passengerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
@@ -708,6 +925,8 @@ const styles = StyleSheet.create({
   startBtn: { backgroundColor: '#2196F3', borderRadius: 10, padding: 12, marginTop: 15, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   completeBtn: { backgroundColor: '#4CAF50', borderRadius: 10, padding: 12, marginTop: 15, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   completedText: { marginTop: 10, color: '#4CAF50', fontWeight: '600' },
+  deliveryBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#00C9A7', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 10 },
+  deliveryBadgeText: { color: '#FFFFFF', fontWeight: '700', fontSize: 13 },
   chatButton: { backgroundColor: '#00C9A7', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   chatButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
   chatBadge: { position: 'absolute', right: 10, top: -8, minWidth: 24, height: 24, borderRadius: 12, backgroundColor: '#FF5252', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFFFFF' },

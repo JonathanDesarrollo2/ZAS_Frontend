@@ -69,3 +69,11 @@ export const acceptReservationPayment = async (rideId: string, reservationId: st
 export const rejectReservationPayment = async (rideId: string, reservationId: string) => {
   return apiClient(`/private/driver/rides/${rideId}/reservations/${reservationId}/reject`, { method: 'PUT' });
 };
+
+export const markSharedRidePassengerPickedUp = async (rideId: string, reservationId: string) => {
+  return apiClient(`/private/driver/rides/${rideId}/reservations/${reservationId}/picked-up`, { method: 'PUT' });
+};
+
+export const markSharedRidePassengerCompleted = async (rideId: string, reservationId: string) => {
+  return apiClient(`/private/driver/rides/${rideId}/reservations/${reservationId}/completed`, { method: 'PUT' });
+};

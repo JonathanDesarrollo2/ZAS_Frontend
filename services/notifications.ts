@@ -11,7 +11,7 @@
 // eso afecte el flujo de viajes.
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { Platform, Linking } from 'react-native';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PERSISTENT_NOTIFICATION_KEY = 'persistent_trip_notification_id';
@@ -68,12 +68,6 @@ const getNotifications = async (): Promise<NotificationsModule | null> => {
             shouldSetBadge: true,
           }),
         });
-        Notifications.addNotificationResponseReceivedListener((response) => {
-          const data = response.notification.request.content.data;
-          if (data && typeof data.link === 'string') {
-            Linking.openURL(data.link).catch(() => undefined);
-          }
-        });
         return Notifications;
       })
       .catch(() => null);
@@ -82,9 +76,8 @@ const getNotifications = async (): Promise<NotificationsModule | null> => {
 };
 
 export async function getFCMToken(): Promise<string | null> {
-  // En Expo Go no hay un token FCM utilizable para producción. El valor falso
-  // evita que AuthStore intente registrar un token que no existe realmente.
-  if (isExpoGo) return 'ExpoGoFakeToken';
+  // Expo Go no incluye el soporte nativo de notificaciones push desde SDK 53.
+  if (isExpoGo) return null;
 
   // Un simulador/emulador puede compilar, pero no siempre puede recibir push.
   // El AAB instalado en un teléfono físico sí continúa con el registro.

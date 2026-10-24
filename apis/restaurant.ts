@@ -27,9 +27,10 @@ export interface OptionGroup {
 
 export interface Product {
   id: string;
+  category_id: string;
   name: string;
   description?: string;
-  price: number;
+  price: number | string;
   image?: string;
   sort_order: number;
   active: boolean;
@@ -54,6 +55,16 @@ export interface Restaurant {
 
 export const getMyRestaurant = async () => {
   const res = await apiClient<{ result: boolean; content: Restaurant }>('/private/merchant/restaurant');
+  return res.content;
+};
+
+export const getCategories = async (): Promise<Category[]> => {
+  const res = await apiClient<{ result: boolean; content: Category[] }>('/private/merchant/categories');
+  return res.content;
+};
+
+export const getProducts = async (): Promise<Product[]> => {
+  const res = await apiClient<{ result: boolean; content: Product[] }>('/private/merchant/products');
   return res.content;
 };
 
@@ -95,9 +106,13 @@ export const createProduct = async (categoryId: string, data: {
   formData.append('name', data.name);
   formData.append('price', data.price.toString());
   if (data.description) formData.append('description', data.description);
-  if (data.sort_order) formData.append('sort_order', data.sort_order.toString());
+  if (data.sort_order !== undefined) formData.append('sort_order', data.sort_order.toString());
   if (data.imageFile) {
-    formData.append('image', data.imageFile as any);
+    formData.append('image', {
+      uri: data.imageFile.uri,
+      type: data.imageFile.type,
+      name: data.imageFile.name,
+    } as any);
   }
 
   // Usamos fetch directo para FormData
@@ -127,7 +142,13 @@ export const updateProduct = async (productId: string, data: {
   if (data.description !== undefined) formData.append('description', data.description);
   if (data.sort_order !== undefined) formData.append('sort_order', data.sort_order.toString());
   if (data.active !== undefined) formData.append('active', data.active ? 'true' : 'false');
-  if (data.imageFile) formData.append('image', data.imageFile as any);
+  if (data.imageFile) {
+    formData.append('image', {
+      uri: data.imageFile.uri,
+      type: data.imageFile.type,
+      name: data.imageFile.name,
+    } as any);
+  }
 
   const token = await getToken();
   const baseUrl = process.env.EXPO_PUBLIC_API_URL;

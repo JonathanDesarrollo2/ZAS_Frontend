@@ -72,6 +72,15 @@ const DriverRidesScreen = () => {
                 <Feather name="chevron-right" size={20} color="#ccc" />
               </TouchableOpacity>
               <Text style={styles.detail}>Puestos: {item.available_seats}/{item.total_seats} · {item.status}</Text>
+              {(item.status === 'active' || item.status === 'full') && (
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#00C9A7', marginTop: 12, alignSelf: 'flex-start' }]}
+                  onPress={() => router.push({ pathname: '/driver/shared-ride-active', params: { rideId: item.id } })}
+                >
+                  <Feather name="map" size={16} color="#fff" style={{ marginRight: 5 }} />
+                  <Text style={styles.actionText}>Seguimiento de pasajeros</Text>
+                </TouchableOpacity>
+              )}
               {item.status === 'active' && (
                 <View style={styles.actions}>
                   <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#FF9800' }]} onPress={() => handleFull(item.id)}><Feather name="x-circle" size={16} color="#fff" style={{ marginRight: 4 }} /><Text style={styles.actionText}>Lleno</Text></TouchableOpacity>

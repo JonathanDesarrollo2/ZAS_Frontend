@@ -14,6 +14,10 @@ export interface CreateTripPayload {
   trip_type?: 'ride' | 'delivery';
   package_description?: string;
   package_recipient_phone?: string;
+  stops?: { lat: number; lng: number; address: string }[];
+  scheduled_at?: string | null;
+  is_scheduled?: boolean;
+  payment_method?: string;
 }
 
 export const createTrip = async (payload: CreateTripPayload): Promise<any> => {
@@ -62,6 +66,13 @@ export const completeTrip = async (tripId: string) => {
   return apiClient(`/private/trips/${tripId}/complete`, { method: 'PUT' });
 };
 
+export const reportPassengerLocation = async (tripId: string, lat: number, lng: number) => {
+  return apiClient(`/private/trips/${tripId}/location`, {
+    method: 'PUT',
+    body: JSON.stringify({ lat, lng }),
+  });
+};
+
 export const getActiveTrip = async (): Promise<any> => {
   return apiClient('/private/trips/active');
 };
@@ -81,6 +92,12 @@ export const driverArrivedDestination = async (tripId: string) => {
     method: 'POST',
   });
 };
+
+export const markTripDeliveryPickedUp = async (tripId: string) =>
+  apiClient(`/private/marketplace/trips/${tripId}/picked-up`, { method: 'PUT' });
+
+export const markTripDeliveryDelivered = async (tripId: string) =>
+  apiClient(`/private/marketplace/trips/${tripId}/delivered`, { method: 'PUT' });
 
 export const cancelTripByDriver = async (tripId: string) => {
   return apiClient(`/private/trips/${tripId}/cancel-by-driver`, {

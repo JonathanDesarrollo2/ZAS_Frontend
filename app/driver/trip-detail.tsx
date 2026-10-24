@@ -9,6 +9,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { apiClient } from '../../apis/Client';
+import { useAuth } from '../../presentation/store/AuthStore';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
@@ -33,6 +34,7 @@ interface TripDetail {
 }
 
 const TripDetailScreen = () => {
+  const { user } = useAuth();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,6 +97,23 @@ const TripDetailScreen = () => {
     } finally {
       setAccepting(false);
     }
+  };
+
+  const handleAcceptPress = () => {
+    const hasProfilePhoto = [user?.profile_pic_url, user?.profile_pic]
+      .some((photo) => typeof photo === 'string' && photo.trim().length > 0);
+    if (!hasProfilePhoto) {
+      Alert.alert(
+        'Foto de perfil requerida',
+        'Acción requerida: Necesitas subir una foto de perfil real para poder pedir o aceptar viajes.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Aceptar', onPress: () => router.push('/profile') },
+        ],
+      );
+      return;
+    }
+    void handleAccept();
   };
 
   const mapHTML = trip ? `
@@ -169,7 +188,7 @@ const TripDetailScreen = () => {
 
         <TouchableOpacity
           style={[styles.acceptButton, accepting && { opacity: 0.7 }]}
-          onPress={handleAccept}
+          onPress={handleAcceptPress}
           disabled={accepting}
           activeOpacity={0.8}
         >

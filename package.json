@@ -1,7 +1,7 @@
 {
   "name": "zas_frontend",
   "main": "expo-router/entry",
-  "version": "1.0.10",
+  "version": "1.0.15",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -14,6 +14,7 @@
     "@expo-google-fonts/space-mono": "^0.4.2",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-firebase/app": "^26.1.0",
     "@react-native-firebase/messaging": "^26.1.0",
     "@react-navigation/bottom-tabs": "^7.15.5",
@@ -21,6 +22,7 @@
     "@react-navigation/native": "^7.1.33",
     "expo": "^57.0.0",
     "expo-build-properties": "~57.0.20",
+    "expo-camera": "~57.0.6",
     "expo-constants": "~57.0.18",
     "expo-device": "~57.0.2",
     "expo-document-picker": "~57.0.2",
@@ -49,6 +51,7 @@
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-web": "~0.21.0",
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.1",

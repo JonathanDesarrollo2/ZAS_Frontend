@@ -6,17 +6,20 @@ import {
   TextInput, ActivityIndicator, ScrollView, Image,
   Modal, KeyboardAvoidingView, Platform, FlatList,
   BackHandler, AppState,
+  Share,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import * as Location from 'expo-location';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { connectSocket, getSocket, ensurePersistentTripNotification, clearPersistentTripNotification } from '../services/socketClient';
 import { apiClient } from '../apis/Client';
-import { confirmTripPayment, completeTrip, cancelTrip } from '../apis/trips';
+import { confirmTripPayment, completeTrip, cancelTrip, reportPassengerLocation } from '../apis/trips';
 import { getUnreadCount } from '../apis/chat';
 import ToastNotification from '../presentation/components/shared/toastNotification';
 import { useAuth } from '../presentation/store/AuthStore';
 import { isChatOpen } from '../services/chatPresence';
+import ReviewModal from '../components/ReviewModal';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
@@ -93,9 +96,13 @@ const TripActiveScreen = () => {
   const [bankModalVisible, setBankModalVisible] = useState(false);
 
   const [tripStatus, setTripStatus] = useState<string>('accepted');
+  const [tripType, setTripType] = useState<'ride' | 'delivery'>('ride');
+  const [tripLoaded, setTripLoaded] = useState(false);
   const [tripOrigen, setTripOrigen] = useState<{ lat: number; lng: number } | null>(null);
   const [tripDestino, setTripDestino] = useState<{ lat: number; lng: number } | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
+  const [revieweeDriverId, setRevieweeDriverId] = useState(driverId || '');
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
 
   const [driverPublicInfo, setDriverPublicInfo] = useState<{
     profilePicUrl?: string | null;
@@ -109,6 +116,7 @@ const TripActiveScreen = () => {
   // Cuenta los mensajes recibidos mientras el pasajero permanece en el viaje.
   const [unreadMessages, setUnreadMessages] = useState(0);
   const lastMessageNoticeAt = useRef(0);
+  const lastPassengerLocationErrorAt = useRef(0);
   const showToast = useCallback((msg: string, type: 'error' | 'success' = 'error') => {
     setToastMsg(msg);
     setToastType(type);
@@ -118,6 +126,10 @@ const TripActiveScreen = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const webViewRef = useRef<WebView>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tripStatus === 'completed') setReviewModalVisible(true);
+  }, [tripStatus]);
 
   // Polling para actualizar estado cada 5 segundos
   useEffect(() => {
@@ -214,9 +226,79 @@ const TripActiveScreen = () => {
     return () => clearInterval(interval);
   }, [tripId]);
 
+  // Comparte la ubicación actual del pasajero durante los estados activos, sin guardar un historial.
+  useEffect(() => {
+    const activeStatuses = ['accepted', 'arrived', 'in_progress', 'arrived_destination'];
+    if (!tripLoaded || !tripId || tripType !== 'ride' || !activeStatuses.includes(tripStatus)) return;
+
+    let cancelled = false;
+    let sending = false;
+    let lastSentAt = 0;
+    let subscription: Location.LocationSubscription | null = null;
+
+    const sendLocation = async (lat: number, lng: number) => {
+      const now = Date.now();
+      if (cancelled || sending || now - lastSentAt < 9500) return;
+      sending = true;
+      lastSentAt = now;
+      try {
+        await reportPassengerLocation(tripId, lat, lng);
+      } catch {
+        if (!cancelled && now - lastPassengerLocationErrorAt.current >= 30000) {
+          lastPassengerLocationErrorAt.current = now;
+          showToast('No se pudo actualizar tu ubicación. Revisa tu conexión.', 'error');
+        }
+      } finally {
+        sending = false;
+      }
+    };
+
+    const startWatching = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (status !== 'granted') {
+          showToast('Permite el acceso a la ubicación para compartirla durante el viaje.', 'error');
+          return;
+        }
+
+        const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        if (cancelled) return;
+        await sendLocation(current.coords.latitude, current.coords.longitude);
+
+        const locationSubscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 10000,
+            distanceInterval: 0,
+          },
+          (location) => {
+            void sendLocation(location.coords.latitude, location.coords.longitude);
+          }
+        );
+        if (cancelled) {
+          locationSubscription.remove();
+        } else {
+          subscription = locationSubscription;
+        }
+      } catch {
+        if (!cancelled) {
+          showToast('No se pudo iniciar el seguimiento de ubicación.', 'error');
+        }
+      }
+    };
+
+    void startWatching();
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, [tripId, tripLoaded, tripStatus, tripType, showToast]);
+
   // Cambiar de etapa solo cambia el destino de la ruta; no reconstruye el mapa.
   useEffect(() => {
-    const target = tripStatus === 'in_progress' || tripStatus === 'arrived_destination'
+    const target = tripStatus === 'in_progress' || tripStatus === 'arrived_destination' ||
+      (tripType === 'delivery' && tripStatus === 'picked_up')
       ? tripDestino
       : tripOrigen;
     if (target) {
@@ -224,7 +306,7 @@ const TripActiveScreen = () => {
         `window.updateRouteTarget && window.updateRouteTarget(${target.lat}, ${target.lng}); true;`,
       );
     }
-  }, [tripStatus, tripOrigen?.lat, tripOrigen?.lng, tripDestino?.lat, tripDestino?.lng]);
+  }, [tripStatus, tripType, tripOrigen?.lat, tripOrigen?.lng, tripDestino?.lat, tripDestino?.lng]);
 
   // Al volver a la app, refrescar estado
   useEffect(() => {
@@ -283,6 +365,8 @@ const TripActiveScreen = () => {
       );
       if (res.result) {
         const trip = res.content;
+        if (trip.driver_id) setRevieweeDriverId(String(trip.driver_id));
+        setTripLoaded(true);
         if (!['completed', 'cancelled'].includes(trip.status)) {
           const driverAssigned = ['accepted', 'arrived'].includes(trip.status);
           ensurePersistentTripNotification(
@@ -310,6 +394,7 @@ const TripActiveScreen = () => {
           setShowPaymentForm(false);
         }
         setTripStatus(trip.status || 'accepted');
+        setTripType(trip.trip_type === 'delivery' ? 'delivery' : 'ride');
         if (trip.pickup_lat && trip.pickup_lng) {
           setTripOrigen({ lat: Number(trip.pickup_lat), lng: Number(trip.pickup_lng) });
         }
@@ -403,8 +488,30 @@ const TripActiveScreen = () => {
     }
   };
 
+  const handleShareTrip = async () => {
+    const start = driverLocation ?? tripOrigen;
+    const destination = tripDestino ?? tripOrigen;
+    const mapsUrl = start && destination
+      ? `https://www.google.com/maps/dir/?api=1&origin=${start.lat},${start.lng}&destination=${destination.lat},${destination.lng}&travelmode=driving`
+      : 'https://maps.google.com';
+    const plate = driverPublicInfo?.vehicleDetails?.placa;
+    const vehicleDescription = [
+      driverPublicInfo?.vehicleDetails?.marca_modelo || vehicle || 'Moto',
+      plate ? `placa ${plate}` : null,
+    ].filter(Boolean).join(', ');
+
+    try {
+      await Share.share({
+        message: `¡Hola! Estoy en un viaje con ZAS. Mi conductor es ${driverName || 'Conductor'} en ${vehicleDescription}. Puedes consultar el trayecto en Google Maps: ${mapsUrl}`,
+      });
+    } catch {
+      showToast('No se pudo abrir el menú para compartir.');
+    }
+  };
+
   const routeOrigin = driverLocation ?? tripOrigen ?? { lat: 0, lng: 0 };
-  const routeDestination = tripStatus === 'in_progress' || tripStatus === 'arrived_destination'
+  const routeDestination = tripStatus === 'in_progress' || tripStatus === 'arrived_destination' ||
+    (tripType === 'delivery' && tripStatus === 'picked_up')
     ? (tripDestino ?? tripOrigen ?? routeOrigin)
     : (tripOrigen ?? tripDestino ?? routeOrigin);
 
@@ -531,7 +638,7 @@ const TripActiveScreen = () => {
 
           directionsService = new google.maps.DirectionsService();
 
-           const routeTarget = ${tripStatus === 'in_progress' || tripStatus === 'arrived_destination' ? 'destinationCoords || pickupCoords' : 'pickupCoords || destinationCoords'};
+           const routeTarget = ${tripStatus === 'in_progress' || tripStatus === 'arrived_destination' || (tripType === 'delivery' && tripStatus === 'picked_up') ? 'destinationCoords || pickupCoords' : 'pickupCoords || destinationCoords'};
            if (routeTarget) {
               requestRoute(driverPos, routeTarget, true);
               activeRouteTarget = routeTarget;
@@ -593,6 +700,14 @@ const TripActiveScreen = () => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 300 : 0}
     >
       <ToastNotification message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
+      <ReviewModal
+        visible={reviewModalVisible && tripStatus === 'completed'}
+        tripId={String(tripId || '')}
+        revieweeId={revieweeDriverId}
+        reviewerRole="passenger"
+        onClose={() => setReviewModalVisible(false)}
+        onSubmitted={() => showToast('Gracias por compartir tu experiencia', 'success')}
+      />
       {driverLocation || tripOrigen || tripDestino ? (
         <WebView
            ref={webViewRef}
@@ -624,7 +739,15 @@ const TripActiveScreen = () => {
               ) : (
                 <Feather name="user" size={20} color="#00C9A7" />
               )}
-              <Text style={styles.infoText}>{driverName || 'Conductor'}</Text>
+              <TouchableOpacity
+                onPress={() => revieweeDriverId && router.push({
+                  pathname: '/profile/[userId]',
+                  params: { userId: revieweeDriverId },
+                })}
+                disabled={!revieweeDriverId}
+              >
+                <Text style={styles.infoText}>{driverName || 'Conductor'}</Text>
+              </TouchableOpacity>
             </View>
 
             {driverPublicInfo?.vehicleDetails && (
@@ -672,6 +795,15 @@ const TripActiveScreen = () => {
           </View>
 
           <TouchableOpacity
+            style={styles.shareTripButton}
+            onPress={() => void handleShareTrip()}
+            accessibilityRole="button"
+          >
+            <Feather name="share-2" size={20} color="#00967D" />
+            <Text style={styles.shareTripButtonText}>Compartir viaje</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={styles.chatButton}
             onPress={() => {
               setUnreadMessages(0);
@@ -686,6 +818,12 @@ const TripActiveScreen = () => {
           {/* Estado del viaje */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Estado del viaje</Text>
+            {tripType === 'delivery' && (
+              <View style={styles.statusRow}>
+                <Feather name="package" size={20} color="#00C9A7" />
+                <Text style={styles.statusText}>Entrega de marketplace</Text>
+              </View>
+            )}
             {tripStatus === 'accepted' && (
               <View style={styles.statusRow}>
                 <Feather name="clock" size={20} color="#FFA500" />
@@ -702,6 +840,12 @@ const TripActiveScreen = () => {
               <View style={styles.statusRow}>
                 <Feather name="navigation" size={20} color="#00C9A7" />
                 <Text style={styles.statusText}>En camino a tu destino</Text>
+              </View>
+            )}
+            {tripType === 'delivery' && tripStatus === 'picked_up' && (
+              <View style={styles.statusRow}>
+                <Feather name="navigation" size={20} color="#00C9A7" />
+                <Text style={styles.statusText}>El producto fue recogido y va en camino a tu ubicación</Text>
               </View>
             )}
             {tripStatus === 'arrived_destination' && (
@@ -992,6 +1136,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  shareTripButton: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#B7EDE1',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  shareTripButtonText: { color: '#008F79', fontWeight: '700', fontSize: 15, marginLeft: 8 },
   chatBadge: { position: 'absolute', right: 10, top: -8, minWidth: 24, height: 24, borderRadius: 12, backgroundColor: '#FF5252', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFFFFF' },
   chatBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   chatButtonText: { color: '#fff', fontWeight: '600', fontSize: 16, marginLeft: 8 },

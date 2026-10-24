@@ -1,5 +1,5 @@
 // LEIDO
-import { apiClient } from './Client';
+import { getToken } from './Client';
 
 export interface MerchantApplicationPayload {
   owner_name: string;
@@ -15,12 +15,27 @@ export interface MerchantApplicationPayload {
   documents?: FormData; // si se usa upload directo, aquí no se envía JSON
 }
 
-export const submitMerchantApplication = async (formData: FormData) => {
-  return apiClient('/public/merchant-applications', {
+export const submitMerchantApplication = async (formData: FormData): Promise<any> => {
+  const token = await getToken();
+  const baseUrl = process.env.EXPO_PUBLIC_API_URL ||
+    'https://zas-backend-112404045385.us-central1.run.app/api';
+
+  const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/public/merchant-applications`, {
     method: 'POST',
     headers: {
-      // Importante: No establecer Content-Type manualmente; fetch lo hace por FormData
+      Authorization: `Bearer ${token}`,
     },
     body: formData,
-  } as RequestInit);
+  });
+
+  let data: { result?: boolean; error?: string[] };
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('Error al procesar la respuesta del servidor');
+  }
+  if (!response.ok || !data.result) {
+    throw new Error(data.error?.[0] || 'Error al enviar la solicitud');
+  }
+  return data;
 };
