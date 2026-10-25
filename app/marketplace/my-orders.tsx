@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { cancelMarketplaceOrder, getMyMarketplaceOrders, MarketplaceOrder } from '../../apis/marketplace';
 import MarketplaceReviewModal from '../../components/MarketplaceReviewModal';
+import { connectSocket } from '../../services/socketClient';
 
 const getStatusLabel = (order: MarketplaceOrder): string => {
   if (order.status === 'pending_payment') return 'Pendiente de pago';
@@ -46,6 +47,21 @@ export default function MarketplaceMyOrdersScreen() {
   useFocusEffect(useCallback(() => {
     void loadOrders();
   }, [loadOrders]));
+
+  useEffect(() => {
+    let cancelled = false;
+    let cleanup: () => void = () => {};
+    connectSocket().then((socket) => {
+      if (cancelled) return;
+      const onOrderUpdated = () => { void loadOrders(); };
+      socket.on('marketplace:order-updated', onOrderUpdated);
+      cleanup = () => socket.off('marketplace:order-updated', onOrderUpdated);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+  }, [loadOrders]);
 
   const cancelOrder = (order: MarketplaceOrder) => {
     Alert.alert('Cancelar pedido', '¿Seguro que deseas cancelar este pedido?', [

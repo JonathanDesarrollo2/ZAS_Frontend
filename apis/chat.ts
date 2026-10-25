@@ -6,6 +6,7 @@ export interface ChatMessage {
   id: number;
   trip_id?: string;
   marketplace_order_id?: string;
+  chat_participant_id?: string | null;
   sender_id: string;
   message: string;
   message_type?: 'text' | 'image' | 'system';
@@ -39,9 +40,10 @@ export const markMessagesRead = async (tripId: string) => {
   await apiClient(`/private/chat/${tripId}/read`, { method: 'POST' });
 };
 
-export const getMarketplaceMessages = async (orderId: string): Promise<ChatMessage[]> => {
+export const getMarketplaceMessages = async (orderId: string, chatParticipantId?: string): Promise<ChatMessage[]> => {
+  const query = chatParticipantId ? `?chatParticipantId=${encodeURIComponent(chatParticipantId)}` : '';
   const res = await apiClient<{ result: boolean; content: ChatMessage[] }>(
-    `/private/marketplace/orders/${orderId}/messages`,
+    `/private/marketplace/orders/${orderId}/messages${query}`,
   );
   return res.content;
 };
@@ -49,12 +51,16 @@ export const getMarketplaceMessages = async (orderId: string): Promise<ChatMessa
 export const sendMarketplaceMessage = async (
   orderId: string,
   message: string | { image_url: string },
+  chatParticipantId?: string,
 ) => {
   await apiClient(`/private/marketplace/orders/${orderId}/messages`, {
     method: 'POST',
-    body: JSON.stringify(typeof message === 'string' ? { message } : {
-      message_type: 'image',
-      image_url: message.image_url,
+    body: JSON.stringify({
+      ...(typeof message === 'string' ? { message } : {
+        message_type: 'image',
+        image_url: message.image_url,
+      }),
+      ...(chatParticipantId ? { chat_participant_id: chatParticipantId } : {}),
     }),
   });
 };

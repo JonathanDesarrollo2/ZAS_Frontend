@@ -1,5 +1,6 @@
 // LEIDO
 import { apiClient, getToken } from './Client';
+import { requestRestaurantDriverLink } from './driverLinks';
 
 export interface Category {
   id: string;
@@ -48,6 +49,7 @@ export interface Restaurant {
   lng?: number;
   delivery_radius_km?: number;
   has_own_delivery: boolean;
+  linked_driver_id?: string | null;
   commission_percent: number;
   active: boolean;
   opening_hours: any[];
@@ -74,6 +76,9 @@ export const updateRestaurant = async (data: Partial<Restaurant>) => {
     body: JSON.stringify(data),
   });
 };
+
+export const requestDriverLink = async (driverCode: string) =>
+  requestRestaurantDriverLink(driverCode);
 
 export const createCategory = async (name: string, sortOrder = 0) => {
   return apiClient('/private/merchant/categories', {

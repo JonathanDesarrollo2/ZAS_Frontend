@@ -8,7 +8,9 @@ export interface MarketplaceProduct {
   stock: number;
   image_urls?: string[] | null;
   image_url?: string | null;
-  status: 'available' | 'sold';
+  status: 'available' | 'sold' | 'archived';
+  free_shipping?: boolean;
+  sales_count?: number;
   pickup_address: string;
   pickup_lat: number | string;
   pickup_lng: number | string;
@@ -49,6 +51,7 @@ export const updateMarketplaceProduct = (productId: string, payload: {
   description: string;
   price: number;
   stock: number;
+  free_shipping?: boolean;
 }) =>
   apiClient<{ result: boolean; content: MarketplaceProduct }>(`/private/marketplace/products/${encodeURIComponent(productId)}`, {
     method: 'PUT',
@@ -75,6 +78,7 @@ export const createMarketplaceProduct = (payload: {
   image_url?: string;
   seller_declaration_accepted: boolean;
   stock: number;
+  free_shipping?: boolean;
   pickup: { address: string; lat: number; lng: number };
 }) =>
   apiClient<{ result: boolean; content: MarketplaceProduct; error?: string[] }>(

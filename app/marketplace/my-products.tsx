@@ -25,19 +25,23 @@ export default function MyMarketplaceProductsScreen() {
   useFocusEffect(useCallback(() => { void loadProducts(); }, [loadProducts]));
 
   const removeProduct = (product: MarketplaceProduct) => {
-    Alert.alert('Eliminar producto', `¿Quieres eliminar «${product.title}»?`, [
+    const actionLabel = product.status === 'sold' || (product.sales_count || 0) > 0 ? 'Archivar' : 'Archivar producto';
+    Alert.alert('Archivar producto', `¿Quieres archivar «${product.title}»? Ya no aparecerá en el catálogo, pero se conservará el historial de pedidos.`, [
       { text: 'Cancelar', style: 'cancel' },
       {
-        text: 'Eliminar',
+        text: actionLabel,
         style: 'destructive',
         onPress: async () => {
           setRemovingId(product.id);
           try {
             const response = await deleteMarketplaceProduct(product.id);
-            if (!response.result) throw new Error(response.error?.[0] || 'No se pudo eliminar el producto');
-            setProducts((current) => current.filter((item) => item.id !== product.id));
+            if (!response.result) throw new Error(response.error?.[0] || 'No se pudo archivar el producto');
+            setProducts((current) => current.map((item) => item.id === product.id
+              ? { ...item, status: 'archived' }
+              : item));
+            Alert.alert('Producto archivado', 'El producto se ocultó del catálogo y se conservó el historial de ventas.');
           } catch (error) {
-            Alert.alert('No se pudo eliminar', error instanceof Error ? error.message : 'Intenta nuevamente.');
+            Alert.alert('No se pudo archivar', error instanceof Error ? error.message : 'Intenta nuevamente.');
           } finally {
             setRemovingId(null);
           }
@@ -73,15 +77,23 @@ export default function MyMarketplaceProductsScreen() {
               <Text style={styles.name} numberOfLines={2}>{item.title}</Text>
               <Text style={styles.price}>${Number(item.price).toFixed(2)}</Text>
               <Text style={styles.stock}>Disponibles: {item.stock}</Text>
-              <Text style={styles.status}>{item.status === 'available' ? 'Publicado' : 'Sin stock / vendido'}</Text>
+              <Text style={styles.status}>
+                {item.status === 'archived' ? 'Archivado' : item.status === 'available' ? 'Publicado' : 'Sin stock / vendido'}
+                {(item.sales_count || 0) > 0 ? ` · ${item.sales_count} pedido(s)` : ''}
+              </Text>
             </View>
             <View style={styles.actions}>
               <TouchableOpacity style={styles.action} onPress={() => router.push({ pathname: '/marketplace/create', params: { productId: item.id } })} accessibilityLabel="Editar producto">
                 <Feather name="edit-2" size={17} color="#008F79" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.action} onPress={() => removeProduct(item)} disabled={removingId === item.id} accessibilityLabel="Eliminar producto">
-                {removingId === item.id ? <ActivityIndicator size="small" color="#EF4444" /> : <Feather name="trash-2" size={17} color="#EF4444" />}
-              </TouchableOpacity>
+              {item.status !== 'archived' && <TouchableOpacity
+                style={styles.action}
+                onPress={() => removeProduct(item)}
+                disabled={removingId === item.id}
+                accessibilityLabel="Archivar producto"
+              >
+                {removingId === item.id ? <ActivityIndicator size="small" color="#EF4444" /> : <Feather name="archive" size={17} color="#EF4444" />}
+              </TouchableOpacity>}
             </View>
           </View>
         )}

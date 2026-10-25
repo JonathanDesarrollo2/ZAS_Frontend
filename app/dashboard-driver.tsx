@@ -17,7 +17,7 @@ import { getMyMarketplaceProducts } from '../apis/marketplace';
 type FeatherIconName =
   | 'search' | 'plus-circle' | 'list' | 'truck' | 'toggle-right' | 'navigation'
   | 'chevron-right' | 'bell' | 'log-out' | 'menu'
-  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'mail' | 'dollar-sign' | 'package';
+  | 'x' | 'user' | 'shield' | 'file-text' | 'credit-card' | 'mail' | 'dollar-sign' | 'package' | 'hash';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * 0.75;
@@ -248,6 +248,7 @@ const DashboardDriverScreen = () => {
           <MenuItem icon="mail" label="Verificar correo" onPress={() => { closeMenu(); router.push('/auth/VerifyEmail'); }} />
           <MenuItem icon="file-text" label="Historial" onPress={() => { closeMenu(); showToast('Historial próximamente', 'error'); }} />
           <MenuItem icon="dollar-sign" label="Mis Ganancias" onPress={() => { closeMenu(); router.push('/driver/earnings'); }} />
+          <MenuItem icon="hash" label="Mi Código" onPress={() => { closeMenu(); router.push('/driver/driver-code'); }} />
           {hasSellerProducts && <>
             <MenuItem icon="package" label="Mis Productos" onPress={() => { closeMenu(); router.push('/marketplace/my-products'); }} />
             <MenuItem icon="package" label="Mis Ventas" onPress={() => { closeMenu(); router.push('/marketplace/sales'); }} />

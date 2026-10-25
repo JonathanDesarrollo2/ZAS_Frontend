@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View, Alert,
+  Switch,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -23,6 +24,7 @@ const CreateMarketplaceProductScreen = () => {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('1');
+  const [freeShipping, setFreeShipping] = useState(false);
   const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [pickup, setPickup] = useState<{ address: string; lat: number; lng: number } | null>(null);
@@ -46,6 +48,7 @@ const CreateMarketplaceProductScreen = () => {
         setDescription(content.description);
         setPrice(String(content.price));
         setStock(String(content.stock));
+        setFreeShipping(Boolean(content.free_shipping));
         setPickup({
           address: content.pickup_address,
           lat: Number(content.pickup_lat),
@@ -86,27 +89,41 @@ const CreateMarketplaceProductScreen = () => {
     return () => { cancelled = true; };
   }, []);
 
-  const chooseImages = async () => {
+  const chooseImages = async (source: 'camera' | 'gallery') => {
     if (images.length >= 6) {
       Alert.alert('Límite alcanzado', 'Puedes agregar un máximo de 6 imágenes.');
       return;
     }
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permiso requerido', 'Permite el acceso a tus fotos para agregar imágenes al producto.');
+    const permission = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Permiso requerido', source === 'camera'
+        ? 'Permite el acceso a la cámara para tomar una foto.'
+        : 'Permite el acceso a tus fotos para agregar imágenes al producto.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsMultipleSelection: true,
-      selectionLimit: 6 - images.length,
-      quality: 0.8,
-    });
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsMultipleSelection: true,
+          selectionLimit: 6 - images.length,
+          quality: 0.8,
+        });
     if (!result.canceled) {
       setImages((current) => [...current, ...result.assets]
         .filter((asset, index, assets) => assets.findIndex((item) => item.uri === asset.uri) === index)
         .slice(0, 6));
     }
+  };
+
+  const openImageSourcePicker = () => {
+    Alert.alert('Agregar fotos', 'Elige cómo agregar una imagen al producto.', [
+      { text: 'Cámara', onPress: () => { void chooseImages('camera'); } },
+      { text: 'Galería', onPress: () => { void chooseImages('gallery'); } },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
   };
 
   const publish = async () => {
@@ -128,6 +145,7 @@ const CreateMarketplaceProductScreen = () => {
           description: description.trim(),
           price: numericPrice,
           stock: numericStock,
+          free_shipping: freeShipping,
         });
         if (!response.result) throw new Error('No se pudo actualizar el producto');
         Alert.alert('Cambios guardados', 'El producto fue actualizado.', [
@@ -182,6 +200,7 @@ const CreateMarketplaceProductScreen = () => {
           price: numericPrice,
           stock: numericStock,
           seller_declaration_accepted: sellerDeclarationAccepted,
+          free_shipping: freeShipping,
           image_urls: uploadedUrls,
           pickup,
         });
@@ -208,11 +227,23 @@ const CreateMarketplaceProductScreen = () => {
         <TextInput style={[styles.input, styles.description]} value={description} onChangeText={setDescription} placeholder="Descripción" placeholderTextColor="#9CA3AF" multiline />
         <TextInput style={styles.input} value={price} onChangeText={setPrice} placeholder="Precio (USD)" placeholderTextColor="#9CA3AF" keyboardType="decimal-pad" />
         <TextInput style={styles.input} value={stock} onChangeText={setStock} placeholder="Unidades disponibles" placeholderTextColor="#9CA3AF" keyboardType="number-pad" />
-        {!editing && <TouchableOpacity style={styles.imagePicker} onPress={() => void chooseImages()}>
+        {!editing && <TouchableOpacity style={styles.imagePicker} onPress={openImageSourcePicker}>
           <Feather name="image" size={19} color="#00C9A7" />
           <Text style={styles.imagePickerText}>Agregar imágenes ({images.length}/6)</Text>
           <Feather name="plus" size={19} color="#00C9A7" />
         </TouchableOpacity>}
+        <View style={styles.shippingRow}>
+          <View style={styles.shippingTextContainer}>
+            <Text style={styles.shippingTitle}>Ofrecer Envío Gratuito</Text>
+            <Text style={styles.shippingHint}>Yo asumo el costo del envío</Text>
+          </View>
+          <Switch
+            value={freeShipping}
+            onValueChange={setFreeShipping}
+            trackColor={{ false: '#D1D5DB', true: '#8DE8D5' }}
+            thumbColor={freeShipping ? '#00C9A7' : '#F9FAFB'}
+          />
+        </View>
         {images.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageStrip}>
             {images.map((image) => (
@@ -286,6 +317,10 @@ const styles = StyleSheet.create({
   description: { height: 110, textAlignVertical: 'top', paddingTop: 14 },
   imagePicker: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', borderRadius: 13, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 14, marginBottom: 12 },
   imagePickerText: { flex: 1, marginLeft: 10, color: '#1F2937', fontSize: 15, fontWeight: '600' },
+  shippingRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', borderRadius: 13, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 14, marginBottom: 16 },
+  shippingTextContainer: { flex: 1, paddingRight: 10 },
+  shippingTitle: { color: '#1F2937', fontSize: 14, fontWeight: '700' },
+  shippingHint: { color: '#6B7280', fontSize: 12, marginTop: 3 },
   imageStrip: { marginBottom: 15 },
   thumbnailWrap: { width: 76, height: 76, marginRight: 10 },
   thumbnail: { width: 76, height: 76, borderRadius: 10, backgroundColor: '#ECFDF8' },

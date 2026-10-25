@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, Animated, TouchableOpacity,
   BackHandler, Image, Modal, ScrollView, Alert,
+  Vibration,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -17,6 +18,7 @@ import ToastNotification from '../../presentation/components/shared/toastNotific
 import { useAuth } from '../../presentation/store/AuthStore';
 import { isChatOpen } from '../../services/chatPresence';
 import ReviewModal from '../../components/ReviewModal';
+import { getMarketplaceOrder, MarketplaceOrder } from '../../apis/marketplace';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
@@ -39,7 +41,9 @@ interface TripData {
   price: number;
   status: string;
   trip_type?: 'ride' | 'delivery';
+  marketplace_order_id?: string | null;
   payment_method?: string;
+  package_description?: string | null;
   passenger?: {
     id?: string;
     username?: string;
@@ -71,6 +75,7 @@ const DriverActiveTripScreen = () => {
   const { user } = useAuth();
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const [trip, setTrip] = useState<TripData | null>(null);
+  const [marketplaceOrder, setMarketplaceOrder] = useState<MarketplaceOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [driverLoc, setDriverLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [passengerLoc, setPassengerLoc] = useState<{ lat: number; lng: number } | null>(null);
@@ -84,6 +89,7 @@ const DriverActiveTripScreen = () => {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const lastMessageNoticeAt = useRef(0);
   const proximityAlertsShown = useRef(new Set<string>());
+  const deliveryArrivalAlerted = useRef(new Set<string>());
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const mapRef = useRef<WebView>(null);
 
@@ -108,6 +114,7 @@ const DriverActiveTripScreen = () => {
   };
 
   const handleDeliveryDelivered = async () => {
+    if (!isNearDeliveryDestination) return;
     try {
       await markTripDeliveryDelivered(tripId!);
       await clearPersistentTripNotification();
@@ -118,6 +125,20 @@ const DriverActiveTripScreen = () => {
       showToast(err.message || 'No se pudo completar la entrega');
     }
   };
+
+  useEffect(() => {
+    if (!trip?.marketplace_order_id) {
+      setMarketplaceOrder(null);
+      return;
+    }
+    let mounted = true;
+    getMarketplaceOrder(trip.marketplace_order_id)
+      .then(({ result, content }) => {
+        if (mounted && result) setMarketplaceOrder(content);
+      })
+      .catch(() => undefined);
+    return () => { mounted = false; };
+  }, [trip?.marketplace_order_id]);
 
   // Polling cada 5 segundos
   useEffect(() => {
@@ -157,8 +178,8 @@ const DriverActiveTripScreen = () => {
       subscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
-          timeInterval: 6000,
-          distanceInterval: 15,
+          timeInterval: trip?.trip_type === 'delivery' ? 3000 : 6000,
+          distanceInterval: trip?.trip_type === 'delivery' ? 3 : 15,
         },
         (location) => {
           const lat = location.coords.latitude;
@@ -177,7 +198,7 @@ const DriverActiveTripScreen = () => {
       cancelled = true;
       subscription?.remove();
     };
-  }, [tripId]);
+  }, [tripId, trip?.trip_type]);
 
   useEffect(() => {
     if (!driverLoc) return;
@@ -416,6 +437,24 @@ const DriverActiveTripScreen = () => {
       ],
     );
   }, [driverLoc, passengerLoc, trip]);
+
+  const isNearDeliveryDestination = Boolean(
+    trip?.trip_type === 'delivery' &&
+    trip.status === 'picked_up' &&
+    driverLoc &&
+    distanceInMeters(driverLoc, {
+      lat: Number(trip.dropoff_lat),
+      lng: Number(trip.dropoff_lng),
+    }) <= 10
+  );
+
+  useEffect(() => {
+    if (!isNearDeliveryDestination || !trip) return;
+    const key = `${trip.id}:delivery-arrival`;
+    if (deliveryArrivalAlerted.current.has(key)) return;
+    deliveryArrivalAlerted.current.add(key);
+    Vibration.vibrate([0, 500, 200, 500]);
+  }, [isNearDeliveryDestination, trip?.id]);
 
   // La ruta cambia al destino desde que el backend marca el viaje en curso.
   const isDestinationLeg = ['in_progress', 'arrived_destination'].includes(String(trip?.status || '').toLowerCase()) ||
@@ -758,7 +797,11 @@ const DriverActiveTripScreen = () => {
         {trip.trip_type === 'delivery' ? (
           <View style={styles.paymentSection}>
             <Text style={styles.subtitle}>Pago de la entrega</Text>
-            <Text style={styles.value}>El producto fue confirmado por el vendedor.</Text>
+            <Text style={styles.value}>
+              {trip.package_description?.includes('vendedor')
+                ? 'Envío pagado por el vendedor. Cobrar al entregar.'
+                : 'Cobrar envío al comprador.'}
+            </Text>
             <Text style={styles.value}>Tarifa de entrega en efectivo: ${Number(trip.price).toFixed(2)}</Text>
           </View>
         ) : isAppPayment ? (
@@ -809,13 +852,17 @@ const DriverActiveTripScreen = () => {
         {trip.status === 'arrived' && (
           <TouchableOpacity style={styles.startBtn} onPress={trip.trip_type === 'delivery' ? handleDeliveryPickedUp : handleStartTrip}>
             <Feather name={trip.trip_type === 'delivery' ? 'package' : 'user-check'} size={18} color="#fff" />
-            <Text style={styles.btnText}>{trip.trip_type === 'delivery' ? ' Producto Recibido' : ' Pasajero a bordo'}</Text>
+            <Text style={styles.btnText}>{trip.trip_type === 'delivery' ? ' Tengo el paquete' : ' Pasajero a bordo'}</Text>
           </TouchableOpacity>
         )}
         {trip.trip_type === 'delivery' && trip.status === 'picked_up' && (
-          <TouchableOpacity style={styles.completeBtn} onPress={handleDeliveryDelivered}>
-            <Feather name="check-circle" size={18} color="#fff" />
-            <Text style={styles.btnText}> Entregado</Text>
+          <TouchableOpacity
+            style={[styles.completeBtn, !isNearDeliveryDestination && { opacity: 0.65 }]}
+            onPress={handleDeliveryDelivered}
+            disabled={!isNearDeliveryDestination}
+          >
+            <Feather name={isNearDeliveryDestination ? 'check-circle' : 'navigation'} size={18} color="#fff" />
+            <Text style={styles.btnText}>{isNearDeliveryDestination ? ' Confirmar Entrega' : ' En camino al destino'}</Text>
           </TouchableOpacity>
         )}
         {trip.status === 'in_progress' && (
@@ -843,24 +890,57 @@ const DriverActiveTripScreen = () => {
         )}
 
         {/* Chat */}
-        <TouchableOpacity
-          style={styles.chatButton}
-          onPress={() => {
-            setUnreadMessages(0);
-            router.push({
-              pathname: '/chat',
-              params: {
-                tripId,
-                chatWith: trip.passenger?.username || trip.passenger?.userlogin || 'Pasajero',
-                chatWithPhoto: passengerPic || '',
-              }
-            });
-          }}
-        >
-          <Feather name="message-circle" size={20} color="#fff" />
-          <Text style={styles.chatButtonText}> Chat</Text>
-          {unreadMessages > 0 && <View style={styles.chatBadge}><Text style={styles.chatBadgeText}>{unreadMessages}</Text></View>}
-        </TouchableOpacity>
+        {trip.trip_type === 'delivery' && marketplaceOrder ? (
+          <>
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={() => router.push({
+                pathname: '/chat',
+                params: {
+                  orderId: marketplaceOrder.id,
+                  chatRecipientId: marketplaceOrder.seller_id,
+                  chatWith: marketplaceOrder.seller?.username || marketplaceOrder.seller?.userlogin || 'Vendedor',
+                },
+              })}
+            >
+              <Feather name="message-circle" size={20} color="#fff" />
+              <Text style={styles.chatButtonText}> Chatear con Vendedor</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={() => router.push({
+                pathname: '/chat',
+                params: {
+                  orderId: marketplaceOrder.id,
+                  chatRecipientId: marketplaceOrder.buyer_id,
+                  chatWith: marketplaceOrder.buyer?.username || marketplaceOrder.buyer?.userlogin || 'Comprador',
+                },
+              })}
+            >
+              <Feather name="message-circle" size={20} color="#fff" />
+              <Text style={styles.chatButtonText}> Chatear con Comprador</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <TouchableOpacity
+            style={styles.chatButton}
+            onPress={() => {
+              setUnreadMessages(0);
+              router.push({
+                pathname: '/chat',
+                params: {
+                  tripId,
+                  chatWith: trip.passenger?.username || trip.passenger?.userlogin || 'Pasajero',
+                  chatWithPhoto: passengerPic || '',
+                }
+              });
+            }}
+          >
+            <Feather name="message-circle" size={20} color="#fff" />
+            <Text style={styles.chatButtonText}> Chat</Text>
+            {unreadMessages > 0 && <View style={styles.chatBadge}><Text style={styles.chatBadgeText}>{unreadMessages}</Text></View>}
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.homeButton}
           onPress={() => router.replace('/dashboard')}

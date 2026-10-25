@@ -33,9 +33,10 @@ const BASE_BOTTOM_PADDING = Platform.OS === 'ios' ? 34 : 28;
 const KEYBOARD_OPEN_PADDING = 8;
 
 const ChatScreen = () => {
-  const { tripId, orderId, chatWith } = useLocalSearchParams<{
+  const { tripId, orderId, chatWith, chatRecipientId } = useLocalSearchParams<{
     tripId?: string;
     orderId?: string;
+    chatRecipientId?: string;
     chatWith: string;
   }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -44,6 +45,11 @@ const ChatScreen = () => {
   const { user } = useAuth(); // ahora user.id existe
   const [bottomPadding, setBottomPadding] = useState(BASE_BOTTOM_PADDING);
   const marketplaceChat = Boolean(orderId && !tripId);
+  const marketplaceChatParticipantId = chatRecipientId || (
+    messages.some((message) =>
+      message.chat_participant_id === user?.id && message.sender_id !== user?.id
+    ) ? user?.id : undefined
+  );
   const [marketplaceOrder, setMarketplaceOrder] = useState<MarketplaceOrder | null>(null);
   const [confirmingDelivery, setConfirmingDelivery] = useState(false);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
@@ -162,7 +168,7 @@ const ChatScreen = () => {
         name: asset.fileName || `chat-${Date.now()}.jpg`,
         type: asset.mimeType || 'image/jpeg',
       });
-      await sendMarketplaceMessage(orderId, { image_url: imageUrl });
+      await sendMarketplaceMessage(orderId, { image_url: imageUrl }, marketplaceChatParticipantId);
     } catch (error) {
       Alert.alert('No se pudo enviar la imagen', error instanceof Error ? error.message : 'Intenta nuevamente.');
     }
@@ -205,6 +211,8 @@ const ChatScreen = () => {
       const handleMessage = (msg: ChatMessage) => {
         if (marketplaceChat) {
           if (msg.marketplace_order_id !== orderId) return;
+          if (chatRecipientId && msg.chat_participant_id !== chatRecipientId) return;
+          if (!chatRecipientId && msg.chat_participant_id && msg.chat_participant_id !== user?.id) return;
           setMessages(prev => {
             if (prev.some((item) => item.id === msg.id ||
               (item.sender_id === 'system' && msg.sender_id === 'system' && item.message === msg.message))) return prev;
@@ -271,12 +279,12 @@ const ChatScreen = () => {
       cancelled = true;
       cleanupSocket();
     };
-  }, [tripId, orderId, marketplaceChat, user?.id]);
+  }, [tripId, orderId, chatRecipientId, marketplaceChat, user?.id]);
 
   const loadMessages = async () => {
     try {
       if (marketplaceChat && orderId) {
-        setMessages(await getMarketplaceMessages(orderId));
+        setMessages(await getMarketplaceMessages(orderId, chatRecipientId));
         return;
       }
       if (!tripId) return;
@@ -305,7 +313,7 @@ const ChatScreen = () => {
   const handleSend = async () => {
     if (!text.trim()) return;
     try {
-      if (marketplaceChat && orderId) await sendMarketplaceMessage(orderId, text.trim());
+      if (marketplaceChat && orderId) await sendMarketplaceMessage(orderId, text.trim(), marketplaceChatParticipantId);
       else if (tripId) await sendMessage(tripId, text.trim());
       else return;
       setText('');
@@ -354,7 +362,24 @@ const ChatScreen = () => {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Feather name="arrow-left" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{chatWith || 'Chat'}</Text>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>{chatWith || 'Chat'}</Text>
+          {marketplaceChat && marketplaceOrder && (
+            <Text style={[
+              styles.orderBadge,
+              marketplaceOrder.status === 'cancelled' ? styles.cancelledBadge
+                : marketplaceOrder.status === 'pending_payment' ? styles.pendingBadge
+                  : styles.paidBadge,
+            ]}>
+              {marketplaceOrder.status === 'pending_payment' ? 'Pendiente'
+                : marketplaceOrder.status === 'cancelled' ? 'Cancelado'
+                  : marketplaceOrder.status === 'delivered' ? 'Entregado'
+                    : marketplaceOrder.status === 'picked_up' ? 'En camino'
+                      : marketplaceOrder.status === 'delivery_assigned' ? 'Repartidor asignado'
+                        : 'Pagado'}
+            </Text>
+          )}
+        </View>
         <View style={{ width: 40 }} />
       </View>
 
@@ -384,12 +409,12 @@ const ChatScreen = () => {
           <Text style={styles.confirmOrderText}>Marcar como Pagado</Text>
         </TouchableOpacity>
       )}
-      {marketplaceChat && marketplaceOrder && marketplaceOrder.status !== 'pending_payment' && (
+      {marketplaceChat && marketplaceOrder && marketplaceOrder.status !== 'pending_payment' && marketplaceOrder.status !== 'cancelled' && (
         <View style={styles.orderStatus}>
           <Text style={styles.orderStatusText}>
-            Pedido: {marketplaceOrder.status === 'paid' && !marketplaceOrder.trip
-              ? 'pago reportado, esperando verificación'
-              : marketplaceOrder.status === 'delivered' ? 'entregado' : marketplaceOrder.status.replace('_', ' ')}
+            {marketplaceOrder.status === 'paid' && !marketplaceOrder.trip
+              ? 'Pago reportado, esperando verificación'
+              : marketplaceOrder.status === 'delivered' ? 'Pedido entregado' : ''}
           </Text>
           {marketplaceTripId ? (
             <TouchableOpacity onPress={() => router.push({ pathname: '/trip-active', params: { tripId: marketplaceTripId } })}>
@@ -414,6 +439,12 @@ const ChatScreen = () => {
           <Text style={styles.chatReviewText}>Calificar Venta</Text>
         </TouchableOpacity>
       )}
+      {marketplaceChat && marketplaceOrder?.status === 'cancelled' && (
+        <View style={styles.cancelledBanner}>
+          <Feather name="slash" size={18} color="#B42318" />
+          <Text style={styles.cancelledBannerText}>Este pedido fue cancelado</Text>
+        </View>
+      )}
 
       <FlatList
         ref={flatListRef}
@@ -429,7 +460,7 @@ const ChatScreen = () => {
         }
       />
 
-      <View style={[styles.inputWrapper, { paddingBottom: bottomPadding }]}>
+      {!(marketplaceChat && marketplaceOrder?.status === 'cancelled') && <View style={[styles.inputWrapper, { paddingBottom: bottomPadding }]}>
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
@@ -448,7 +479,7 @@ const ChatScreen = () => {
             <Feather name="send" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
-      </View>
+      </View>}
       <Modal
         visible={paymentModalVisible}
         transparent
@@ -528,7 +559,14 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   backBtn: { marginRight: 12 },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '600', color: '#1F2937' },
+  headerTextContainer: { flex: 1 },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#1F2937' },
+  orderBadge: { alignSelf: 'flex-start', overflow: 'hidden', borderRadius: 10, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, fontSize: 11, fontWeight: '700' },
+  pendingBadge: { color: '#92400E', backgroundColor: '#FEF3C7' },
+  paidBadge: { color: '#166534', backgroundColor: '#DCFCE7' },
+  cancelledBadge: { color: '#B42318', backgroundColor: '#FEE4E2' },
+  cancelledBanner: { marginHorizontal: 16, marginVertical: 10, minHeight: 44, borderRadius: 12, backgroundColor: '#FEF2F2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  cancelledBannerText: { color: '#B42318', fontWeight: '700', fontSize: 14 },
   confirmOrderButton: { minHeight: 48, marginHorizontal: 16, marginTop: 10, marginBottom: 4, borderRadius: 12, backgroundColor: '#00A98E', alignItems: 'center', justifyContent: 'center' },
   reportPaymentButton: { minHeight: 48, marginHorizontal: 16, marginTop: 10, marginBottom: 8, borderRadius: 12, backgroundColor: '#00C9A7', alignItems: 'center', justifyContent: 'center' },
   cancelOrderButton: { alignSelf: 'center', paddingHorizontal: 16, paddingVertical: 8 },
