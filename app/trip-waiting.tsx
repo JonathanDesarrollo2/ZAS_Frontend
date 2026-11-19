@@ -180,7 +180,7 @@ const TripWaitingScreen = () => {
         <Text style={styles.title}>{scheduledTrip ? 'Viaje programado' : 'Buscando mototaxi'}</Text>
         <Text style={styles.subtitle}>
           {scheduledTrip
-            ? `Se publicará a los conductores 15 minutos antes${scheduledLabel ? `: ${scheduledLabel}` : '.'}`
+            ? `Se publicará a los conductores 10 minutos antes${scheduledLabel ? `: ${scheduledLabel}` : '.'}`
             : 'Espera a que un conductor acepte tu viaje...'}
         </Text>
         <TouchableOpacity style={styles.cancelButton} onPress={handleCancel} disabled={cancelling}>

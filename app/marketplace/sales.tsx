@@ -86,7 +86,11 @@ export default function MarketplaceSalesScreen() {
                   style={styles.chatButton}
                   onPress={() => router.push({
                     pathname: '/marketplace/chat/[orderId]',
-                    params: { orderId: item.id, chatWith: item.buyer?.username || item.buyer?.userlogin || 'Comprador' },
+                    params: {
+                      orderId: item.id,
+                      chatWith: item.buyer?.username || item.buyer?.userlogin || 'Comprador',
+                      returnTo: '/marketplace/sales',
+                    },
                   })}
                 >
                   <Feather name="message-circle" size={16} color="#FFFFFF" />

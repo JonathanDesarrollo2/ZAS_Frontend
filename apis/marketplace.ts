@@ -30,6 +30,16 @@ export interface MarketplaceOrder {
   payer_phone?: string | null;
   payment_reference?: string | null;
   payment_reported_at?: string | null;
+  seller_payment_account?: {
+    bankName: string;
+    cedula: string;
+    phone: string;
+  } | null;
+  driver_payment_account?: {
+    bankName: string;
+    cedula: string;
+    phone: string;
+  } | null;
   has_reviewed_by_me?: boolean;
   product?: MarketplaceProduct | null;
   seller?: { id: string; username?: string; userlogin?: string };

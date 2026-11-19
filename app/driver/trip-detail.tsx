@@ -1,6 +1,5 @@
-// LEIDO
 // app/driver/trip-detail.tsx
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Animated, Alert,
 } from 'react-native';
@@ -17,6 +16,17 @@ const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 const originPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#00A884" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#00A884">A</text></svg>')}`;
 const destinationPinIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#D99A00" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#D99A00">B</text></svg>')}`;
 
+// Pin morado para las paradas intermedias (mismo estilo redondo que A y B).
+const buildStopPinIcon = (num: number) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"><path fill="#7C3AED" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="3" fill="white"/><text x="12" y="10.5" text-anchor="middle" font-size="3" font-family="Arial" font-weight="bold" fill="#7C3AED">${num}</text></svg>`
+)}`;
+
+interface TripDetailStop {
+  lat: number;
+  lng: number;
+  address: string;
+}
+
 interface TripDetail {
   id: string;
   pickup_lat: number;
@@ -27,6 +37,8 @@ interface TripDetail {
   dropoff_address: string;
   price: number;
   vehicle_type: string;
+  trip_type?: 'ride' | 'delivery';
+  stops?: TripDetailStop[]; // NUEVO
   passenger?: {
     username?: string;
     userlogin: string;
@@ -116,55 +128,90 @@ const TripDetailScreen = () => {
     void handleAccept();
   };
 
-  const mapHTML = trip ? `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>html, body, #map { height: 100%; margin: 0; padding: 0; }</style>
-    </head>
-    <body>
-      <div id="map"></div>
-      <script>
-        let map, directionsService, directionsRenderer;
-        function initMap() {
-          const origin = { lat: ${trip.pickup_lat}, lng: ${trip.pickup_lng} };
-          const destination = { lat: ${trip.dropoff_lat}, lng: ${trip.dropoff_lng} };
-          map = new google.maps.Map(document.getElementById('map'), {
-            zoom: 14,
-            center: origin,
-            disableDefaultUI: true,
-            zoomControl: false
-          });
-          directionsService = new google.maps.DirectionsService();
-          directionsRenderer = new google.maps.DirectionsRenderer({
-            suppressMarkers: true,
-            polylineOptions: { strokeColor: '#1E90FF', strokeWeight: 5 }
-          });
-          directionsRenderer.setMap(map);
-          new google.maps.Marker({
-            position: origin,
-            map: map,
-             icon: '${originPinIcon}',
-            title: 'Origen'
-          });
-          new google.maps.Marker({
-            position: destination,
-            map: map,
-             icon: '${destinationPinIcon}',
-            title: 'Destino'
-          });
-          directionsService.route({
-            origin, destination, travelMode: 'DRIVING'
-          }, function(response, status) {
-            if (status === 'OK') directionsRenderer.setDirections(response);
-          });
-        }
-      </script>
-      <script async defer src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap"></script>
-    </body>
-    </html>
-  ` : '';
+  // Firma estable de las paradas para que el mapa no se recargue innecesariamente.
+  const stopsSignature = useMemo(
+    () => JSON.stringify((trip?.stops || []).map(s => ({ lat: Number(s.lat), lng: Number(s.lng), address: s.address }))),
+    [trip?.stops]
+  );
+
+  const mapHTML = useMemo(() => {
+    if (!trip) return '';
+    const stopsData = (trip.stops || []).map((stop, index) => ({
+      lat: Number(stop.lat),
+      lng: Number(stop.lng),
+      address: stop.address || '',
+      iconUrl: buildStopPinIcon(index + 1),
+    }));
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>html, body, #map { height: 100%; margin: 0; padding: 0; }</style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          let map, directionsService, directionsRenderer;
+          const stopsData = ${JSON.stringify(stopsData)};
+          function initMap() {
+            const origin = { lat: ${Number(trip.pickup_lat)}, lng: ${Number(trip.pickup_lng)} };
+            const destination = { lat: ${Number(trip.dropoff_lat)}, lng: ${Number(trip.dropoff_lng)} };
+            map = new google.maps.Map(document.getElementById('map'), {
+              zoom: 14,
+              center: origin,
+              disableDefaultUI: true,
+              zoomControl: false
+            });
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({
+              suppressMarkers: true,
+              polylineOptions: { strokeColor: '#1E90FF', strokeWeight: 5 }
+            });
+            directionsRenderer.setMap(map);
+            new google.maps.Marker({
+              position: origin,
+              map: map,
+              icon: { url: '${originPinIcon}', anchor: new google.maps.Point(18, 36) },
+              title: 'Origen'
+            });
+            new google.maps.Marker({
+              position: destination,
+              map: map,
+              icon: { url: '${destinationPinIcon}', anchor: new google.maps.Point(18, 36) },
+              title: 'Destino'
+            });
+            // Marcadores morados con número para cada parada intermedia.
+            stopsData.forEach((stop) => {
+              new google.maps.Marker({
+                map: map,
+                position: { lat: stop.lat, lng: stop.lng },
+                icon: { url: stop.iconUrl, anchor: new google.maps.Point(18, 36) },
+                title: 'Parada: ' + (stop.address || '')
+              });
+            });
+            // Ruta completa con waypoints: respeta el orden de las paradas.
+            const waypoints = stopsData.map((stop) => ({
+              location: { lat: stop.lat, lng: stop.lng },
+              stopover: true,
+            }));
+            directionsService.route({
+              origin,
+              destination,
+              travelMode: 'DRIVING',
+              provideRouteAlternatives: false,
+              waypoints,
+              optimizeWaypoints: false,
+            }, function(response, status) {
+              if (status === 'OK') directionsRenderer.setDirections(response);
+            });
+          }
+        </script>
+        <script async defer src="https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap"></script>
+      </body>
+      </html>
+    `;
+  }, [trip?.id, trip?.pickup_lat, trip?.pickup_lng, trip?.dropoff_lat, trip?.dropoff_lng, stopsSignature]);
 
   if (loading) {
     return (
@@ -176,6 +223,8 @@ const TripDetailScreen = () => {
 
   if (!trip) return null;
 
+  const stops = trip.stops || [];
+
   return (
     <View style={styles.screen}>
       <WebView style={styles.map} source={{ html: mapHTML }} javaScriptEnabled />
@@ -183,6 +232,18 @@ const TripDetailScreen = () => {
         <Text style={styles.title}>Detalle del viaje</Text>
         <Text style={styles.value}>👤 {trip.passenger?.username || trip.passenger?.userlogin}</Text>
         <Text style={styles.value}>📍 Origen: {trip.pickup_address}</Text>
+        {stops.length > 0 && (
+          <View style={styles.stopsBlock}>
+            <Text style={styles.stopsHeader}>
+              🚩 {stops.length} parada{stops.length > 1 ? 's' : ''} intermedia{stops.length > 1 ? 's' : ''}:
+            </Text>
+            {stops.map((stop, index) => (
+              <Text key={index} style={styles.stopItem}>
+                {index + 1}. {stop.address}
+              </Text>
+            ))}
+          </View>
+        )}
         <Text style={styles.value}>🏁 Destino: {trip.dropoff_address}</Text>
         <Text style={styles.price}>💰 ${Number(trip.price).toFixed(2)}</Text>
 
@@ -218,6 +279,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: '700', color: '#1F2937', marginBottom: 12 },
   value: { fontSize: 16, color: '#374151', marginBottom: 6 },
   price: { fontSize: 22, fontWeight: '700', color: '#00C9A7', marginTop: 8 },
+  stopsBlock: { backgroundColor: '#F5F3FF', borderRadius: 12, padding: 12, marginVertical: 6 },
+  stopsHeader: { fontSize: 14, fontWeight: '700', color: '#6D28D9', marginBottom: 6 },
+  stopItem: { fontSize: 14, color: '#4C1D95', marginBottom: 3, marginLeft: 4 },
   acceptButton: {
     backgroundColor: '#00C9A7', borderRadius: 16, height: 56, flexDirection: 'row',
     justifyContent: 'center', alignItems: 'center', marginTop: 16,

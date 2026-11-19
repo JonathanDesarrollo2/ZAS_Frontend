@@ -7,6 +7,7 @@ import { Linking } from 'react-native';
 import Constants from 'expo-constants';
 import { useAuth } from '../presentation/store/AuthStore';
 import { LEGAL_TERMS_VERSION } from '../legal/LegalTexts';
+import { stopPassengerLocationTask } from '../services/passengerLocationTask';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -41,6 +42,13 @@ export default function RootLayout() {
     initialized.current = true;
     initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    if (isLoading || isAuthenticated) return;
+    void stopPassengerLocationTask().catch((error: unknown) => {
+      console.error('No se pudo detener el rastreo al cerrar sesión:', error);
+    });
+  }, [isAuthenticated, isLoading]);
 
   useEffect(() => {
     if (Constants.appOwnership === 'expo') return;

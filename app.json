@@ -30,7 +30,8 @@
       },
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
       ]
     },
     "web": {
@@ -57,7 +58,16 @@
         }
       ],
       "expo-font",
-      "expo-location",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "ZAS necesita tu ubicación durante el viaje.",
+          "locationAlwaysAndWhenInUsePermission": "ZAS necesita compartir tu ubicación con el conductor mientras el viaje está activo, incluso si minimizas la app.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
       [
         "expo-build-properties",
         {

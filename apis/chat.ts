@@ -53,7 +53,9 @@ export const sendMarketplaceMessage = async (
   message: string | { image_url: string },
   chatParticipantId?: string,
 ) => {
-  await apiClient(`/private/marketplace/orders/${orderId}/messages`, {
+  return apiClient<{ result: boolean; content: ChatMessage; error?: string[] }>(
+    `/private/marketplace/orders/${encodeURIComponent(orderId)}/messages`,
+    {
     method: 'POST',
     body: JSON.stringify({
       ...(typeof message === 'string' ? { message } : {
@@ -62,7 +64,8 @@ export const sendMarketplaceMessage = async (
       }),
       ...(chatParticipantId ? { chat_participant_id: chatParticipantId } : {}),
     }),
-  });
+    },
+  );
 };
 
 export const uploadMarketplaceChatImage = async (file: {

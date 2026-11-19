@@ -120,6 +120,7 @@ export default function MarketplaceMyOrdersScreen() {
             params: {
               orderId: item.id,
               chatWith: item.seller?.username || item.seller?.userlogin || 'Vendedor',
+              returnTo: '/marketplace/my-orders',
             },
           })}
           accessibilityRole="button"

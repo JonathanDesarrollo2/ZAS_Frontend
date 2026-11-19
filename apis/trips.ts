@@ -31,7 +31,9 @@ export const getAvailableTrips = async (lat: number, lng: number, radius: number
   return apiClient(`/private/trips/available?lat=${lat}&lng=${lng}&radius=${radius}`);
 };
 
-export const cancelTrip = async (tripId: string) => {
+export const cancelTrip = async (
+  tripId: string,
+): Promise<{ result: boolean; content?: unknown; error?: string[] }> => {
   return apiClient(`/private/trips/${tripId}/cancel`, { method: 'PUT' });
 };
 
@@ -58,8 +60,11 @@ export const markArrived = async (tripId: string) => {
   return apiClient(`/private/trips/${tripId}/arrive`, { method: 'PUT' });
 };
 
-export const startTrip = async (tripId: string) => {
-  return apiClient(`/private/trips/${tripId}/start`, { method: 'PUT' });
+export const startTrip = async (tripId: string, location?: { lat: number; lng: number }) => {
+  return apiClient(`/private/trips/${tripId}/start`, {
+    method: 'PUT',
+    ...(location ? { body: JSON.stringify(location) } : {}),
+  });
 };
 
 export const completeTrip = async (tripId: string) => {
@@ -98,6 +103,12 @@ export const markTripDeliveryPickedUp = async (tripId: string) =>
 
 export const markTripDeliveryDelivered = async (tripId: string) =>
   apiClient(`/private/marketplace/trips/${tripId}/delivered`, { method: 'PUT' });
+
+export const cancelTripDeliveryByDriver = async (tripId: string) =>
+  apiClient<{ result: boolean; content: unknown; error?: string[] }>(
+    `/private/marketplace/trips/${encodeURIComponent(tripId)}/cancel-by-driver`,
+    { method: 'PUT' },
+  );
 
 export const cancelTripByDriver = async (tripId: string) => {
   return apiClient(`/private/trips/${tripId}/cancel-by-driver`, {

@@ -1,4 +1,3 @@
-// LEIDO
 // app/request-ride.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
@@ -18,7 +17,7 @@ import RideRouteMap from '../presentation/components/shared/rideRouteMap';
 import { createSavedLocation, deleteSavedLocation, getSavedLocations, SavedLocation, updateSavedLocation } from '../apis/savedLocations';
 import { themeColors } from '../presentation/theme/themeColors';
 import { useAuth } from '../presentation/store/AuthStore';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 type StopDraft = {
   address: string;
@@ -399,7 +398,7 @@ const RequestRideScreen = () => {
     stop.lat !== null && stop.lng !== null ? [{ lat: stop.lat, lng: stop.lng, address: stop.address }] : []
   );
   const stopRouteKey = validMapStops.map((stop) => `${stop.lat}:${stop.lng}`).join('|');
-  const stopSurcharge = validMapStops.length * 0.5;
+  const stopSurcharge = validMapStops.length * 0.3;
   const basePrice = isCustomPrice && customPrice ? parseFloat(customPrice) : (estimatedPrice || 0);
   const displayedPrice = basePrice + stopSurcharge;
 
@@ -453,8 +452,8 @@ const RequestRideScreen = () => {
       showToast('Selecciona una ubicación válida para cada parada');
       return;
     }
-    if (scheduledTrip && scheduledAt.getTime() <= Date.now() + 15 * 60 * 1000) {
-      showToast('Programa el viaje con al menos 15 minutos de anticipación');
+    if (scheduledTrip && scheduledAt.getTime() <= Date.now() + 10 * 60 * 1000) {
+      showToast('Programa el viaje con al menos 10 minutos de anticipación.');
       return;
     }
 
@@ -497,6 +496,12 @@ const RequestRideScreen = () => {
       const response = await createTrip(payload);
       if (response.result) {
         showToast(scheduledTrip ? 'Viaje programado' : 'Viaje solicitado', 'success');
+        // Resetear el estado del programado para que al volver la pantalla quede limpia.
+        if (scheduledTrip) {
+          setScheduledTrip(false);
+          setScheduledAt(new Date(Date.now() + 60 * 60 * 1000));
+          setSchedulePickerMode(null);
+        }
         setTimeout(() => router.push({
           pathname: '/trip-waiting',
           params: {
@@ -563,8 +568,15 @@ const RequestRideScreen = () => {
           onRouteDistance={setRouteDistanceKm}
         />
       </View>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.bottomSheet}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.bottomSheet}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator
+        >
           <Animated.View style={{ opacity: fadeAnim }}>
             {/* Origen */}
             <View style={styles.fieldContainer}>
@@ -728,7 +740,7 @@ const RequestRideScreen = () => {
             </View>
             {stops.length > 0 && (
               <Text style={styles.stopSurchargeText}>
-                Incluye $0.50 adicionales por cada parada
+                Incluye $0.30 adicionales por cada parada
               </Text>
             )}
 
@@ -749,7 +761,7 @@ const RequestRideScreen = () => {
             </TouchableOpacity>
             {scheduledTrip && (
               <View style={styles.scheduleCard}>
-                <Text style={styles.scheduleDescription}>Selecciona fecha y hora (mínimo 15 minutos desde ahora).</Text>
+                <Text style={styles.scheduleDescription}>Selecciona fecha y hora (mínimo 10 minutos desde ahora).</Text>
                 <View style={styles.schedulePickerRow}>
                   <TouchableOpacity
                     style={styles.schedulePickerButton}
@@ -770,30 +782,6 @@ const RequestRideScreen = () => {
                     </Text>
                   </TouchableOpacity>
                 </View>
-                {schedulePickerMode && (
-                  <>
-                    <DateTimePicker
-                      value={scheduledAt}
-                      mode={schedulePickerMode}
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      minimumDate={new Date()}
-                      onChange={(event: DateTimePickerEvent, value?: Date) => {
-                        if (Platform.OS !== 'ios' || event.type === 'dismissed') {
-                          setSchedulePickerMode(null);
-                        }
-                        if (value && event.type !== 'dismissed') setScheduledAt(value);
-                      }}
-                    />
-                    {Platform.OS === 'ios' && (
-                      <TouchableOpacity
-                        style={styles.schedulePickerDone}
-                        onPress={() => setSchedulePickerMode(null)}
-                      >
-                        <Text style={styles.schedulePickerDoneText}>Listo</Text>
-                      </TouchableOpacity>
-                    )}
-                  </>
-                )}
               </View>
             )}
 
@@ -804,11 +792,11 @@ const RequestRideScreen = () => {
                 style={[styles.vehicleCard, selectedVehicle === 'moto' && styles.vehicleSelected]}
                 onPress={() => setSelectedVehicle('moto')}
               >
-                 <MaterialCommunityIcons name="motorbike" size={26} color={selectedVehicle === 'moto' ? '#fff' : '#00C9A7'} />
+                <MaterialCommunityIcons name="motorbike" size={26} color={selectedVehicle === 'moto' ? '#fff' : '#00C9A7'} />
                 <Text style={[styles.vehicleLabel, selectedVehicle === 'moto' && { color: '#fff' }]}>Moto</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.vehicleCard, styles.vehicleDisabled]} disabled>
-                 <MaterialCommunityIcons name="car" size={26} color="#B0BEC5" />
+                <MaterialCommunityIcons name="car" size={26} color="#B0BEC5" />
                 <Text style={[styles.vehicleLabel, { color: '#B0BEC5' }]}>Auto (próximo)</Text>
               </TouchableOpacity>
             </View>
@@ -879,6 +867,68 @@ const RequestRideScreen = () => {
         onCancel={() => setMapSelectorVisible(false)}
       />
 
+      {/* Modal picker de fecha/hora — SOLO iOS (spinner inline) */}
+      {Platform.OS === 'ios' && (
+        <Modal
+          visible={schedulePickerMode !== null}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSchedulePickerMode(null)}
+        >
+          <View style={styles.scheduleModalOverlay}>
+            <View style={styles.scheduleModalContent}>
+              <View style={styles.scheduleModalHeader}>
+                <Text style={styles.scheduleModalTitle}>
+                  {schedulePickerMode === 'date' ? 'Selecciona la fecha' : 'Selecciona la hora'}
+                </Text>
+                <TouchableOpacity onPress={() => setSchedulePickerMode(null)}>
+                  <Feather name="x" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+              {schedulePickerMode && (
+                <DateTimePicker
+                  key={schedulePickerMode}
+                  value={scheduledAt}
+                  mode={schedulePickerMode}
+                  display="spinner"
+                  minimumDate={schedulePickerMode === 'date' ? new Date() : undefined}
+                  onValueChange={(event, date) => {
+                    if (date && !isNaN(date.getTime())) {
+                      setScheduledAt(date);
+                    }
+                  }}
+                  onDismiss={() => setSchedulePickerMode(null)}
+                />
+              )}
+              <TouchableOpacity
+                style={styles.scheduleModalDoneBtn}
+                onPress={() => setSchedulePickerMode(null)}
+              >
+                <Text style={styles.scheduleModalDoneText}>Listo</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Picker nativo Android — se muestra como diálogo del sistema */}
+      {Platform.OS === 'android' && schedulePickerMode !== null && (
+        <DateTimePicker
+          key={schedulePickerMode}
+          value={scheduledAt}
+          mode={schedulePickerMode}
+          display="default"
+          minimumDate={schedulePickerMode === 'date' ? new Date() : undefined}
+          onValueChange={(event, date) => {
+            if (date && !isNaN(date.getTime())) {
+              setScheduledAt(date);
+            }
+            setSchedulePickerMode(null);
+          }}
+          onDismiss={() => setSchedulePickerMode(null)}
+        />
+      )}
+
       <Modal
         visible={saveLocationModalVisible}
         transparent
@@ -925,7 +975,7 @@ const RequestRideScreen = () => {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F0FDF9' },
   centered: { justifyContent: 'center', alignItems: 'center' },
-  mapPane: { flex: 2, minHeight: 200 },
+  mapPane: { flex: 2, minHeight: 220, overflow: 'hidden' },
   bottomSheet: {
     flex: 3, backgroundColor: '#FFFFFF', borderTopLeftRadius: 22, borderTopRightRadius: 22,
     marginTop: -16, paddingTop: 4, elevation: 12,
@@ -1000,8 +1050,35 @@ const styles = StyleSheet.create({
     gap: 7, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, padding: 10, backgroundColor: '#FFFFFF',
   },
   schedulePickerText: { color: '#1F2937', fontSize: 13, fontWeight: '600' },
-  schedulePickerDone: { alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 8 },
-  schedulePickerDoneText: { color: '#008F79', fontSize: 14, fontWeight: '700' },
+  // ---------- Modal del picker de fecha/hora ----------
+  scheduleModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  scheduleModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  scheduleModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  scheduleModalTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
+  scheduleModalDoneBtn: {
+    backgroundColor: '#00C9A7',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  scheduleModalDoneText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
   distanceText: { color: themeColors.muted, fontSize: 13, fontWeight: '500' },
   priceBlock: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   suggestionsModalOverlay: {

@@ -1,4 +1,3 @@
-// LEIDO
 // app/chat.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import {
@@ -7,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   Image,
   Modal,
   StyleSheet,
@@ -15,14 +15,16 @@ import {
   Keyboard,
   ActivityIndicator,
   Alert,
+  BackHandler,
 } from 'react-native';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiClient } from '../apis/Client';
 import { getMessages, sendMessage, markMessagesRead, getMarketplaceMessages, sendMarketplaceMessage, uploadMarketplaceChatImage, ChatMessage } from '../apis/chat';
 import { connectSocket } from '../services/socketClient';
-import { useAuth } from '../presentation/store/AuthStore'; // ✅ importación corregida
+import { useAuth } from '../presentation/store/AuthStore';
 import { setChatOpen } from '../services/chatPresence';
 import { cancelMarketplaceOrder, getMarketplaceOrder, markMarketplaceOrderPaid, reportMarketplaceOrderPayment, MarketplaceOrder } from '../apis/marketplace';
 import MarketplaceReviewModal from '../components/MarketplaceReviewModal';
@@ -33,35 +35,35 @@ const BASE_BOTTOM_PADDING = Platform.OS === 'ios' ? 34 : 28;
 const KEYBOARD_OPEN_PADDING = 8;
 
 const ChatScreen = () => {
-  const { tripId, orderId, chatWith, chatRecipientId } = useLocalSearchParams<{
+  const { tripId, orderId, chatWith, chatRecipientId, chatParticipantId, returnTo, returnTripId } = useLocalSearchParams<{
     tripId?: string;
     orderId?: string;
     chatRecipientId?: string;
+    chatParticipantId?: string;
     chatWith: string;
+    returnTo?: string;
+    returnTripId?: string;
   }>();
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const flatListRef = useRef<FlatList>(null);
-  const { user } = useAuth(); // ahora user.id existe
+  const { user } = useAuth();
   const [bottomPadding, setBottomPadding] = useState(BASE_BOTTOM_PADDING);
   const marketplaceChat = Boolean(orderId && !tripId);
-  const marketplaceChatParticipantId = chatRecipientId || (
-    messages.some((message) =>
-      message.chat_participant_id === user?.id && message.sender_id !== user?.id
-    ) ? user?.id : undefined
-  );
+
+  // Este ID es el que separa los chats
+  const currentChatParticipantId = chatParticipantId || chatRecipientId;
+
   const [marketplaceOrder, setMarketplaceOrder] = useState<MarketplaceOrder | null>(null);
   const [confirmingDelivery, setConfirmingDelivery] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [reportingPayment, setReportingPayment] = useState(false);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
-  const [paymentDetails, setPaymentDetails] = useState({
-    payer_bank: '',
-    payer_cedula: '',
-    payer_phone: '',
-    payment_reference: '',
-  });
+  const [paymentReference, setPaymentReference] = useState('');
 
+  // Carga inicial de los datos de la orden de MarketPlace
   useEffect(() => {
     if (!marketplaceChat || !orderId) return;
     let mounted = true;
@@ -76,15 +78,41 @@ const ChatScreen = () => {
     return () => { mounted = false; };
   }, [marketplaceChat, orderId]);
 
+  // Lógica de salida robusta
+  const handleBack = React.useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    // Fallback en caso de que no haya historial
+    if (returnTo === '/driver/active-trip' && (returnTripId || tripId)) {
+      router.replace({ pathname: '/driver/active-trip', params: { tripId: returnTripId || tripId } });
+    } else if (returnTo === '/trip-active' && tripId) {
+      router.replace({ pathname: '/trip-active', params: { tripId } });
+    } else if (returnTo === '/marketplace/sales') {
+      router.replace('/marketplace/sales');
+    } else if (returnTo === '/marketplace/my-orders') {
+      router.replace('/marketplace/my-orders');
+    } else if (tripId && user?.nivel === 2) {
+      router.replace({ pathname: '/driver/active-trip', params: { tripId } });
+    } else if (tripId) {
+      router.replace({ pathname: '/trip-active', params: { tripId } });
+    } else if (marketplaceOrder?.seller_id === user?.id) {
+      router.replace('/marketplace/sales');
+    } else if (marketplaceOrder?.buyer_id === user?.id) {
+      router.replace('/marketplace/my-orders');
+    } else {
+      router.replace('/dashboard');
+    }
+  }, [returnTo, returnTripId, tripId, user?.id, user?.nivel, marketplaceOrder?.buyer_id, marketplaceOrder?.seller_id]);
+
   const confirmMarketplacePayment = async () => {
     if (!orderId || confirmingDelivery) return;
     setConfirmingDelivery(true);
     try {
       const response = await markMarketplaceOrderPaid(orderId);
       if (!response.result) throw new Error(response.error?.[0] || 'No se pudo confirmar el pago');
-      setMarketplaceOrder((current) => current
-        ? { ...current, status: 'paid', trip: response.content.trip }
-        : current);
+      setMarketplaceOrder((current) => current ? { ...current, status: 'paid', trip: response.content.trip } : current);
       Alert.alert('Entrega creada', 'El pedido quedó confirmado y ya está disponible para asignar un mototaxi.');
     } catch (error) {
       Alert.alert('No se pudo confirmar', error instanceof Error ? error.message : 'Intenta nuevamente.');
@@ -95,17 +123,17 @@ const ChatScreen = () => {
 
   const reportPayment = async () => {
     if (!orderId || reportingPayment) return;
-    if (Object.values(paymentDetails).some((value) => !value.trim())) {
-      Alert.alert('Datos incompletos', 'Completa el banco, cédula, teléfono y referencia del pago.');
+    if (!paymentReference.trim()) {
+      Alert.alert('Referencia requerida', 'Ingresa el número de referencia para continuar.');
       return;
     }
     setReportingPayment(true);
     try {
       const response = await reportMarketplaceOrderPayment(orderId, {
-        payer_bank: paymentDetails.payer_bank.trim(),
-        payer_cedula: paymentDetails.payer_cedula.trim(),
-        payer_phone: paymentDetails.payer_phone.trim(),
-        payment_reference: paymentDetails.payment_reference.trim(),
+        payer_bank: '',
+        payer_cedula: '',
+        payer_phone: '',
+        payment_reference: paymentReference.trim(),
       });
       if (!response.result) throw new Error(response.error?.[0] || 'No se pudo reportar el pago');
       setMarketplaceOrder(response.content);
@@ -128,10 +156,10 @@ const ChatScreen = () => {
 
   const confirmCancelOrder = () => {
     if (!marketplaceOrder || marketplaceOrder.status !== 'pending_payment') return;
-    Alert.alert('Cancelar pedido', '¿Seguro que deseas cancelar este pedido?', [
-      { text: 'Volver', style: 'cancel' },
+    Alert.alert('Cancelar Pedido', '¿Estás seguro de que deseas cancelar este pedido? Esta acción no se puede deshacer.', [
+      { text: 'No', style: 'cancel' },
       {
-        text: 'Cancelar pedido',
+        text: 'Sí, cancelar',
         style: 'destructive',
         onPress: () => {
           void (async () => {
@@ -168,7 +196,7 @@ const ChatScreen = () => {
         name: asset.fileName || `chat-${Date.now()}.jpg`,
         type: asset.mimeType || 'image/jpeg',
       });
-      await sendMarketplaceMessage(orderId, { image_url: imageUrl }, marketplaceChatParticipantId);
+      await sendMarketplaceMessage(orderId, { image_url: imageUrl }, currentChatParticipantId);
     } catch (error) {
       Alert.alert('No se pudo enviar la imagen', error instanceof Error ? error.message : 'Intenta nuevamente.');
     }
@@ -177,11 +205,17 @@ const ChatScreen = () => {
   useFocusEffect(
     React.useCallback(() => {
       setChatOpen(true);
-      return () => setChatOpen(false);
-    }, []),
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+        handleBack();
+        return true;
+      });
+      return () => {
+        backHandler.remove();
+        setChatOpen(false);
+      };
+    }, [handleBack]),
   );
 
-  // Control del teclado
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => {
       setBottomPadding(KEYBOARD_OPEN_PADDING);
@@ -197,12 +231,12 @@ const ChatScreen = () => {
     };
   }, []);
 
-  // Carga inicial y socket
   useEffect(() => {
     let cancelled = false;
     let cleanupSocket: () => void = () => undefined;
     void loadMessages();
     if (tripId) markMessagesRead(tripId).catch(() => undefined);
+
     const setupSocket = async () => {
       const socket = await connectSocket();
       if (cancelled) return;
@@ -211,16 +245,37 @@ const ChatScreen = () => {
       const handleMessage = (msg: ChatMessage) => {
         if (marketplaceChat) {
           if (msg.marketplace_order_id !== orderId) return;
-          if (chatRecipientId && msg.chat_participant_id !== chatRecipientId) return;
-          if (!chatRecipientId && msg.chat_participant_id && msg.chat_participant_id !== user?.id) return;
-          setMessages(prev => {
-            if (prev.some((item) => item.id === msg.id ||
-              (item.sender_id === 'system' && msg.sender_id === 'system' && item.message === msg.message))) return prev;
-            return [...prev, msg];
-          });
-          return;
+        } else if (tripId) {
+          if (msg.trip_id !== tripId) return;
         }
-        setMessages(prev => [...prev, msg]);
+
+        // ============================================================
+        // FILTRO ESTRICTO BIDIRECCIONAL PARA AISLAR LOS CHATS
+        // ============================================================
+        // Un mensaje pertenece a esta conversación SOLO si:
+        //   (yo → participante)  OR  (participante → yo)
+        // Cualquier otro caso se descarta para evitar fugas cruzadas.
+        const myId = String(user?.id || '');
+        const participantId = String(currentChatParticipantId || '');
+        const msgSender = String(msg.sender_id || '');
+        const msgRecipient = msg.chat_participant_id ? String(msg.chat_participant_id) : '';
+
+        if (msgRecipient) {
+          // Mensaje con destinatario específico.
+          const iSentIt = msgSender === myId && msgRecipient === participantId;
+          const theySentIt = msgSender === participantId && msgRecipient === myId;
+          if (!iSentIt && !theySentIt) return;
+        } else {
+          // Mensaje sin destinatario (chat general del viaje).
+          // Solo se muestra si NO estamos en un chat con participante asignado.
+          if (participantId) return;
+        }
+        // ============================================================
+
+        setMessages(prev => {
+          if (prev.some((item) => item.id === msg.id || (item.sender_id === 'system' && msg.sender_id === 'system' && item.message === msg.message))) return prev;
+          return [...prev, msg];
+        });
         if (tripId) markMessagesRead(tripId).catch(() => undefined);
       };
 
@@ -238,25 +293,16 @@ const ChatScreen = () => {
         if (!tripId) return;
         await AsyncStorage.setItem(ARRIVED_KEY_PREFIX + tripId, 'true');
         const systemMsg: ChatMessage = {
-          id: Date.now(),
-          trip_id: tripId!,
-          sender_id: 'system',
+          id: Date.now(), trip_id: tripId!, sender_id: 'system',
           message: 'El conductor ha llegado a tu ubicación',
-          createdAt: new Date().toISOString(),
-          sender_name: 'Sistema',
+          createdAt: new Date().toISOString(), sender_name: 'Sistema',
         };
-        setMessages(prev => {
-          const alreadyExists = prev.some(
-            m => m.sender_id === 'system' && m.message === systemMsg.message
-          );
-          return alreadyExists ? prev : [...prev, systemMsg];
-        });
+        setMessages(prev => prev.some(m => m.sender_id === 'system' && m.message === systemMsg.message) ? prev : [...prev, systemMsg]);
       };
+
       const handleMarketplaceOrderUpdate = (data: { orderId?: string }) => {
         if (!marketplaceChat || !orderId || data.orderId !== orderId) return;
-        getMarketplaceOrder(orderId)
-          .then(({ result, content }) => { if (result) setMarketplaceOrder(content); })
-          .catch(() => undefined);
+        getMarketplaceOrder(orderId).then(({ result, content }) => { if (result) setMarketplaceOrder(content); }).catch(() => undefined);
       };
 
       const messageEvent = marketplaceChat ? 'marketplace:message' : 'chat:message';
@@ -279,45 +325,71 @@ const ChatScreen = () => {
       cancelled = true;
       cleanupSocket();
     };
-  }, [tripId, orderId, chatRecipientId, marketplaceChat, user?.id]);
+  }, [tripId, orderId, currentChatParticipantId, marketplaceChat, user?.id]);
 
   const loadMessages = async () => {
     try {
       if (marketplaceChat && orderId) {
-        setMessages(await getMarketplaceMessages(orderId, chatRecipientId));
+        setMessages(await getMarketplaceMessages(orderId, currentChatParticipantId));
         return;
       }
       if (!tripId) return;
-      const data = await getMessages(tripId);
+
+      // Pasamos el chatParticipantId a la API para que el backend filtre los mensajes
+      const query = currentChatParticipantId ? `?chatParticipantId=${currentChatParticipantId}` : '';
+      const res = await apiClient<{ result: boolean; content: ChatMessage[] }>(`/private/chat/${tripId}/messages${query}`);
+      const data = res.content;
+
       const arrived = await AsyncStorage.getItem(ARRIVED_KEY_PREFIX + tripId);
       if (arrived === 'true') {
         const systemMsg: ChatMessage = {
-          id: Date.now() + 1,
-          trip_id: tripId,
-          sender_id: 'system',
+          id: Date.now() + 1, trip_id: tripId, sender_id: 'system',
           message: 'El conductor ha llegado a tu ubicación',
-          createdAt: new Date().toISOString(),
-          sender_name: 'Sistema',
+          createdAt: new Date().toISOString(), sender_name: 'Sistema',
         };
-        const exists = data.some(
-          m => m.sender_id === 'system' && m.message === systemMsg.message
-        );
-        if (!exists) {
+        if (!data.some(m => m.sender_id === 'system' && m.message === systemMsg.message)) {
           data.unshift(systemMsg);
         }
       }
       setMessages(data);
-    } catch {}
+    } catch (error) {
+      console.error('No se pudieron cargar los mensajes del chat:', error);
+    }
   };
 
   const handleSend = async () => {
-    if (!text.trim()) return;
+    const messageText = text.trim();
+    if (!messageText || sendingMessage) return;
+    setSendingMessage(true);
     try {
-      if (marketplaceChat && orderId) await sendMarketplaceMessage(orderId, text.trim(), marketplaceChatParticipantId);
-      else if (tripId) await sendMessage(tripId, text.trim());
-      else return;
+      if (marketplaceChat && orderId) {
+        const response = await sendMarketplaceMessage(orderId, messageText, currentChatParticipantId);
+        if (!response.result) throw new Error(response.error?.[0] || 'No se pudo enviar el mensaje.');
+        const sentMessage: ChatMessage = {
+          ...response.content,
+          marketplace_order_id: response.content.marketplace_order_id || orderId,
+          sender_id: response.content.sender_id || user?.id || '',
+        };
+        setMessages((current) => current.some((item) => String(item.id) === String(sentMessage.id)) ? current : [...current, sentMessage]);
+      } else if (tripId) {
+        // Enviamos el chatParticipantId para que el backend guarde el mensaje en la sala correcta
+        await apiClient(`/private/chat/${tripId}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({
+            message: messageText,
+            chatParticipantId: currentChatParticipantId || null
+          }),
+        });
+      } else {
+        throw new Error('No se encontró la conversación para enviar el mensaje.');
+      }
       setText('');
-    } catch {}
+    } catch (error) {
+      console.error('Error enviando mensaje del chat:', error);
+      Alert.alert('No se pudo enviar', error instanceof Error ? error.message : 'Verifica tu conexión.');
+    } finally {
+      setSendingMessage(false);
+    }
   };
 
   const renderItem = ({ item }: { item: ChatMessage }) => {
@@ -329,7 +401,7 @@ const ChatScreen = () => {
       );
     }
 
-    const isMine = user?.id === item.sender_id; // ✅ ya no da error
+    const isMine = user?.id === item.sender_id;
 
     return (
       <View style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble]}>
@@ -350,16 +422,17 @@ const ChatScreen = () => {
       </View>
     );
   };
+
   const marketplaceTripId = marketplaceOrder?.trip?.id;
 
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0} 
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
           <Feather name="arrow-left" size={24} color="#333" />
         </TouchableOpacity>
         <View style={styles.headerTextContainer}>
@@ -383,8 +456,11 @@ const ChatScreen = () => {
         <View style={{ width: 40 }} />
       </View>
 
-      {marketplaceChat && marketplaceOrder && marketplaceOrder.seller_id === user?.id &&
-        (marketplaceOrder.status === 'pending_payment' || (marketplaceOrder.status === 'paid' && !marketplaceOrder.trip)) && (
+      {marketplaceChat && marketplaceOrder &&
+        marketplaceOrder.seller_id === user?.id &&
+        marketplaceOrder.status === 'paid' &&
+        Boolean(marketplaceOrder.payment_reported_at) &&
+        !marketplaceOrder.trip && (
         <TouchableOpacity
           style={[styles.confirmOrderButton, confirmingDelivery && { opacity: 0.65 }]}
           onPress={() => void confirmMarketplacePayment()}
@@ -402,11 +478,10 @@ const ChatScreen = () => {
       )}
       {marketplaceChat && marketplaceOrder && marketplaceOrder.buyer_id === user?.id && marketplaceOrder.status === 'pending_payment' && (
         <TouchableOpacity
-          style={[styles.reportPaymentButton, reportingPayment && { opacity: 0.65 }]}
+          style={styles.reportPaymentButton}
           onPress={() => setPaymentModalVisible(true)}
-          disabled={reportingPayment}
         >
-          <Text style={styles.confirmOrderText}>Marcar como Pagado</Text>
+          <Text style={styles.confirmOrderText}>Ver datos de pago</Text>
         </TouchableOpacity>
       )}
       {marketplaceChat && marketplaceOrder && marketplaceOrder.status !== 'pending_payment' && marketplaceOrder.status !== 'cancelled' && (
@@ -416,7 +491,8 @@ const ChatScreen = () => {
               ? 'Pago reportado, esperando verificación'
               : marketplaceOrder.status === 'delivered' ? 'Pedido entregado' : ''}
           </Text>
-          {marketplaceTripId ? (
+          {/* AQUÍ ESTÁ EL CAMBIO PARA QUE EL TAXISTA NO VEA ESTE BOTÓN */}
+          {marketplaceTripId && user?.nivel !== 2 ? (
             <TouchableOpacity onPress={() => router.push({ pathname: '/trip-active', params: { tripId: marketplaceTripId } })}>
               <Text style={styles.deliveryLink}>Ver entrega</Text>
             </TouchableOpacity>
@@ -427,12 +503,20 @@ const ChatScreen = () => {
         marketplaceOrder.seller_id === user?.id && (
           <View style={styles.paymentDetailsCard}>
             <Text style={styles.paymentDetailsTitle}>Datos reportados por el comprador</Text>
-            <Text style={styles.paymentDetailsText}>Banco: {marketplaceOrder.payer_bank}</Text>
-            <Text style={styles.paymentDetailsText}>Cédula: {marketplaceOrder.payer_cedula}</Text>
-            <Text style={styles.paymentDetailsText}>Teléfono: {marketplaceOrder.payer_phone}</Text>
+            {!!marketplaceOrder.payer_bank && <Text style={styles.paymentDetailsText}>Banco: {marketplaceOrder.payer_bank}</Text>}
+            {!!marketplaceOrder.payer_cedula && <Text style={styles.paymentDetailsText}>Cédula: {marketplaceOrder.payer_cedula}</Text>}
+            {!!marketplaceOrder.payer_phone && <Text style={styles.paymentDetailsText}>Teléfono: {marketplaceOrder.payer_phone}</Text>}
             <Text style={styles.paymentDetailsText}>Referencia: {marketplaceOrder.payment_reference}</Text>
           </View>
         )}
+      {marketplaceChat && marketplaceOrder?.status === 'delivered' && marketplaceOrder.driver_payment_account && (
+        <View style={styles.paymentDetailsCard}>
+          <Text style={styles.paymentDetailsTitle}>Datos para pagar al mototaxista</Text>
+          <Text style={styles.paymentDetailsText}>Banco: {marketplaceOrder.driver_payment_account.bankName}</Text>
+          <Text style={styles.paymentDetailsText}>Cédula: {marketplaceOrder.driver_payment_account.cedula}</Text>
+          <Text style={styles.paymentDetailsText}>Teléfono: {marketplaceOrder.driver_payment_account.phone}</Text>
+        </View>
+      )}
       {marketplaceChat && marketplaceOrder?.status === 'delivered' && !marketplaceOrder.has_reviewed_by_me && (
         <TouchableOpacity style={styles.chatReviewButton} onPress={() => setReviewModalVisible(true)}>
           <Feather name="star" size={17} color="#008F79" />
@@ -476,7 +560,9 @@ const ChatScreen = () => {
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-            <Feather name="send" size={22} color="#fff" />
+            {sendingMessage
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Feather name="send" size={22} color="#fff" />}
           </TouchableOpacity>
         </View>
       </View>}
@@ -488,36 +574,42 @@ const ChatScreen = () => {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.paymentModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Reportar pago</Text>
-              <TouchableOpacity onPress={() => setPaymentModalVisible(false)} accessibilityLabel="Cerrar">
-                <Feather name="x" size={22} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.paymentNotice}>El vendedor verificará estos datos antes de crear la entrega.</Text>
-            {([
-              ['payer_bank', 'Banco emisor'],
-              ['payer_cedula', 'Cédula'],
-              ['payer_phone', 'Teléfono'],
-              ['payment_reference', 'Número de referencia'],
-            ] as const).map(([field, label]) => (
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Pago Móvil del vendedor</Text>
+                <TouchableOpacity onPress={() => setPaymentModalVisible(false)} accessibilityLabel="Cerrar">
+                  <Feather name="x" size={22} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.sellerPaymentCard}>
+                {marketplaceOrder?.seller_payment_account ? (
+                  <>
+                    <Text style={styles.paymentDetailsTitle}>Transfiere a estos datos</Text>
+                    <Text style={styles.paymentDetailsText}>Banco: {marketplaceOrder.seller_payment_account.bankName}</Text>
+                    <Text style={styles.paymentDetailsText}>Cédula: {marketplaceOrder.seller_payment_account.cedula}</Text>
+                    <Text style={styles.paymentDetailsText}>Teléfono: {marketplaceOrder.seller_payment_account.phone}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.paymentNotice}>El vendedor aún no ha registrado sus datos de Pago Móvil. Contáctalo por el chat antes de pagar.</Text>
+                )}
+              </View>
+              <Text style={styles.paymentNotice}>Después de pagar, ingresa el número de referencia.</Text>
               <TextInput
-                key={field}
                 style={styles.paymentInput}
-                value={paymentDetails[field]}
-                onChangeText={(value) => setPaymentDetails((current) => ({ ...current, [field]: value }))}
-                placeholder={label}
+                value={paymentReference}
+                onChangeText={setPaymentReference}
+                placeholder="Número de referencia *"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
-            ))}
-            <TouchableOpacity
-              style={[styles.reportPaymentButton, reportingPayment && { opacity: 0.65 }]}
-              onPress={() => void reportPayment()}
-              disabled={reportingPayment}
-            >
-              {reportingPayment ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.confirmOrderText}>Enviar reporte</Text>}
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.reportPaymentButton, reportingPayment && { opacity: 0.65 }]}
+                onPress={() => void reportPayment()}
+                disabled={reportingPayment}
+              >
+                {reportingPayment ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.confirmOrderText}>Ya realicé el pago</Text>}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -537,16 +629,15 @@ const ChatScreen = () => {
   );
 };
 
-// Los estilos permanecen exactamente igual
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FFFFFF' },
-  chatList: { 
+  chatList: {
     flex: 1,
-    backgroundColor: '#F0FDF9' 
+    backgroundColor: '#F0FDF9'
   },
-  listContent: { 
+  listContent: {
     padding: 16,
-    paddingBottom: 20 
+    paddingBottom: 20
   },
   header: {
     flexDirection: 'row',
@@ -567,7 +658,7 @@ const styles = StyleSheet.create({
   cancelledBadge: { color: '#B42318', backgroundColor: '#FEE4E2' },
   cancelledBanner: { marginHorizontal: 16, marginVertical: 10, minHeight: 44, borderRadius: 12, backgroundColor: '#FEF2F2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   cancelledBannerText: { color: '#B42318', fontWeight: '700', fontSize: 14 },
-  confirmOrderButton: { minHeight: 48, marginHorizontal: 16, marginTop: 10, marginBottom: 4, borderRadius: 12, backgroundColor: '#00A98E', alignItems: 'center', justifyContent: 'center' },
+  confirmOrderButton: { minHeight: 48, marginHorizontal: 16, marginTop: 10, marginBottom: 4, borderRadius: 12, backgroundColor: '#00C9A7', alignItems: 'center', justifyContent: 'center' },
   reportPaymentButton: { minHeight: 48, marginHorizontal: 16, marginTop: 10, marginBottom: 8, borderRadius: 12, backgroundColor: '#00C9A7', alignItems: 'center', justifyContent: 'center' },
   cancelOrderButton: { alignSelf: 'center', paddingHorizontal: 16, paddingVertical: 8 },
   cancelOrderText: { color: '#DC2626', fontSize: 13, fontWeight: '700' },
@@ -657,6 +748,7 @@ const styles = StyleSheet.create({
   chatImage: { width: 220, height: 190, borderRadius: 12, backgroundColor: '#E5E7EB' },
   modalBackdrop: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(17,24,39,0.5)' },
   paymentModal: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 20 },
+  sellerPaymentCard: { padding: 12, backgroundColor: '#ECFDF8', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#B7F0E2' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   modalTitle: { color: '#1F2937', fontSize: 20, fontWeight: '800' },
   paymentNotice: { color: '#6B7280', fontSize: 13, lineHeight: 19, marginBottom: 12 },

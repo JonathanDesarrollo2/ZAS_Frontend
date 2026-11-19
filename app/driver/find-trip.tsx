@@ -1,4 +1,3 @@
-// LEIDO
 // app/driver/find-trips.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
@@ -12,6 +11,12 @@ import { apiClient } from '../../apis/Client';
 import { connectSocket } from '../../services/socketClient';
 import ToastNotification from '../../presentation/components/shared/toastNotification';
 
+interface TripStop {
+  lat: number;
+  lng: number;
+  address: string;
+}
+
 interface Trip {
   id: string;
   pickup_address: string;
@@ -20,6 +25,7 @@ interface Trip {
   vehicle_type: string;
   status: string;
   trip_type?: 'ride' | 'delivery';
+  stops?: TripStop[]; // NUEVO
   passenger?: {
     username?: string;
     userlogin: string;
@@ -51,7 +57,6 @@ const FindTripsScreen = () => {
   const [toastType, setToastType] = useState<'error' | 'success'>('error');
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Los avisos de acceso, permisos y carga usan el popup común.
   const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
     setToastMsg(message);
     setToastType(type);
@@ -62,7 +67,7 @@ const FindTripsScreen = () => {
     if (!currentCoords) return;
     try {
       const { lat, lng } = currentCoords;
-      const radius = 10; // radio en km
+      const radius = 10;
       const endpoint = `/private/trips/available?lat=${lat}&lng=${lng}&radius=${radius}`;
       const response = await apiClient<{ result: boolean; content: Trip[] }>(endpoint);
       if (response.result) {
@@ -77,7 +82,6 @@ const FindTripsScreen = () => {
     }
   }, [currentCoords, showToast]);
 
-  // Escuchar nuevos viajes
   useEffect(() => {
     let cancelled = false;
     let socket: Awaited<ReturnType<typeof connectSocket>> | null = null;
@@ -103,7 +107,6 @@ const FindTripsScreen = () => {
     };
   }, [fetchTrips]);
 
-  // Obtener ubicación optimizada y enviarla periódicamente al backend
   useEffect(() => {
     let isMounted = true;
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -117,7 +120,6 @@ const FindTripsScreen = () => {
           return;
         }
 
-        // 1. Intentar con última ubicación conocida (rápido)
         let location = await Location.getLastKnownPositionAsync();
         if (location && isMounted) {
           setCurrentCoords({
@@ -126,7 +128,6 @@ const FindTripsScreen = () => {
           });
         }
 
-        // 2. Actualizar con ubicación precisa en segundo plano
         Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
           timeInterval: 1000,
@@ -140,23 +141,18 @@ const FindTripsScreen = () => {
               });
             }
           })
-          .catch(() => {
-            // Mantener última ubicación conocida si falla
-          });
+          .catch(() => undefined);
 
-        // 3. Enviar ubicación al backend cada 5 segundos
         interval = setInterval(async () => {
           try {
             const currentLocation = await Location.getCurrentPositionAsync({});
             const socket = await connectSocket();
             socket.emit('driver:location', {
-              tripId: 'find-trips', // string temporal, no afecta el backend
+              tripId: 'find-trips',
               lat: currentLocation.coords.latitude,
               lng: currentLocation.coords.longitude,
             });
-          } catch (err) {
-            // Silencioso
-          }
+          } catch (err) { /* Silencioso */ }
         }, 5000);
       } catch (err) {
         if (isMounted) setLoading(false);
@@ -171,7 +167,6 @@ const FindTripsScreen = () => {
     };
   }, []);
 
-  // Cargar viajes cuando ya tengamos coordenadas
   useEffect(() => {
     if (currentCoords) {
       fetchTrips();
@@ -182,41 +177,68 @@ const FindTripsScreen = () => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  const renderTrip = ({ item }: { item: Trip }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push({ pathname: '/driver/trip-detail', params: { tripId: item.id } })}
-      activeOpacity={0.8}
-    >
-      {item.trip_type === 'delivery' && (
-        <View style={styles.deliveryBadge}>
-          <MaterialCommunityIcons name="package-variant-closed" size={16} color="#FFFFFF" />
-          <Text style={styles.deliveryBadgeText}>Viaje de Entrega</Text>
-        </View>
-      )}
-      <View style={styles.routeRow}>
-        <Feather name="circle" size={14} color="#00C9A7" />
-        <Text style={styles.address}>{sanitizeReadableAddress(item.pickup_address)}</Text>
-      </View>
-      <View style={styles.dottedLine} />
-      <View style={styles.routeRow}>
-        <Feather name="map-pin" size={14} color="#FF6B6B" />
-        <Text style={styles.address}>{sanitizeReadableAddress(item.dropoff_address)}</Text>
-      </View>
-      <View style={styles.infoRow}>
-        <Feather name="dollar-sign" size={14} color="#374151" style={{ marginRight: 6 }} />
-        <Text style={styles.infoText}>${Number(item.price).toFixed(2)}</Text>
-        <Feather name="user" size={14} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
-        <Text style={styles.infoText}>{item.passenger?.username || item.passenger?.userlogin || 'Pasajero'}</Text>
-        {vehicleLabel(item.vehicle_type) === 'Moto' ? (
-          <MaterialCommunityIcons name="motorbike" size={17} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
-        ) : (
-          <MaterialCommunityIcons name="car" size={17} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
+  const renderTrip = ({ item }: { item: Trip }) => {
+    const stops = item.stops || [];
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => router.push({ pathname: '/driver/trip-detail', params: { tripId: item.id } })}
+        activeOpacity={0.8}
+      >
+        {item.trip_type === 'delivery' && (
+          <View style={styles.deliveryBadge}>
+            <MaterialCommunityIcons name="package-variant-closed" size={16} color="#FFFFFF" />
+            <Text style={styles.deliveryBadgeText}>Viaje de Entrega</Text>
+          </View>
         )}
-        <Text style={styles.infoText}>{vehicleLabel(item.vehicle_type)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+        {stops.length > 0 && (
+          <View style={styles.stopBadge}>
+            <Feather name="map-pin" size={14} color="#FFFFFF" />
+            <Text style={styles.stopBadgeText}>
+              {stops.length} parada{stops.length > 1 ? 's' : ''} intermedia{stops.length > 1 ? 's' : ''}
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.routeRow}>
+          <Feather name="circle" size={14} color="#00C9A7" />
+          <Text style={styles.address}>{sanitizeReadableAddress(item.pickup_address)}</Text>
+        </View>
+
+        {/* NUEVO: mostrar cada parada con color morado para que el conductor vea el recorrido completo */}
+        {stops.map((stop, index) => (
+          <View key={`stop-${index}`}>
+            <View style={styles.dottedLine} />
+            <View style={styles.routeRow}>
+              <Feather name="map-pin" size={14} color="#7C3AED" />
+              <Text style={styles.stopAddress}>
+                {index + 1}. {sanitizeReadableAddress(stop.address)}
+              </Text>
+            </View>
+          </View>
+        ))}
+
+        <View style={styles.dottedLine} />
+        <View style={styles.routeRow}>
+          <Feather name="map-pin" size={14} color="#FF6B6B" />
+          <Text style={styles.address}>{sanitizeReadableAddress(item.dropoff_address)}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Feather name="dollar-sign" size={14} color="#374151" style={{ marginRight: 6 }} />
+          <Text style={styles.infoText}>${Number(item.price).toFixed(2)}</Text>
+          <Feather name="user" size={14} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
+          <Text style={styles.infoText}>{item.passenger?.username || item.passenger?.userlogin || 'Pasajero'}</Text>
+          {vehicleLabel(item.vehicle_type) === 'Moto' ? (
+            <MaterialCommunityIcons name="motorbike" size={17} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
+          ) : (
+            <MaterialCommunityIcons name="car" size={17} color="#374151" style={{ marginLeft: 16, marginRight: 6 }} />
+          )}
+          <Text style={styles.infoText}>{vehicleLabel(item.vehicle_type)}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   if (loading && !currentCoords) {
     return (
@@ -230,7 +252,7 @@ const FindTripsScreen = () => {
   return (
     <View style={styles.screen}>
       <ToastNotification message={toastMsg} type={toastType} visible={toastVisible} onHide={() => setToastVisible(false)} />
-      <Animated.View style={[styles.container, { opacity: fadeAnim }]}> 
+      <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
         <Text style={styles.title}>Viajes disponibles</Text>
         <FlatList
           data={trips}
@@ -263,10 +285,13 @@ const styles = StyleSheet.create({
   },
   routeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   address: { color: '#1F2937', fontSize: 16, fontWeight: '500', marginLeft: 12, flex: 1 },
+  stopAddress: { color: '#4C1D95', fontSize: 15, fontWeight: '500', marginLeft: 12, flex: 1 },
   dottedLine: { height: 20, borderLeftWidth: 2, borderColor: '#E5E7EB', marginLeft: 6, marginVertical: 4 },
   infoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginBottom: 8 },
   deliveryBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#00C9A7', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10 },
   deliveryBadgeText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12 },
+  stopBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#7C3AED', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10 },
+  stopBadgeText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12 },
   infoText: { color: '#374151', fontSize: 14 },
   emptyState: { alignItems: 'center', marginTop: 40 },
   emptyText: { fontSize: 18, color: '#6B7280', fontWeight: '600', marginTop: 16 },
