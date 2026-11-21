@@ -21,6 +21,13 @@ import { getMarketplaceOrder, MarketplaceOrder } from '../../apis/marketplace';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
+type WebViewHandle = { injectJavaScript: (script: string) => void };
+const isWebViewHandle = (value: unknown): value is WebViewHandle =>
+  typeof value === 'object' &&
+  value !== null &&
+  'injectJavaScript' in value &&
+  typeof value.injectJavaScript === 'function';
+
 const BANKS = [
   { code: '0102', name: 'Banco de Venezuela' },
   { code: '0104', name: 'Venezolano de Crédito' },
@@ -74,6 +81,7 @@ interface TripData {
   status: string;
   trip_type?: 'ride' | 'delivery';
   marketplace_order_id?: string | null;
+  restaurant_order_id?: string | null;
   payment_method?: string;
   package_description?: string | null;
   stops?: { lat: number; lng: number; address: string }[];
@@ -125,11 +133,11 @@ const DriverActiveTripScreen = () => {
   const proximityAlertsShown = useRef(new Set<string>());
   const deliveryArrivalAlerted = useRef(new Set<string>());
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const mapRef = useRef<WebView>(null);
+  const mapRef = useRef<WebViewHandle | null>(null);
 
   useEffect(() => {
-    if (trip?.status === 'completed') setReviewModalVisible(true);
-  }, [trip?.status]);
+    if (trip?.status === 'completed' && trip.trip_type !== 'delivery') setReviewModalVisible(true);
+  }, [trip?.status, trip?.trip_type]);
 
   const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
     setToastMsg(message);
@@ -190,10 +198,17 @@ const DriverActiveTripScreen = () => {
     if (!isNearDeliveryDestination) return;
     try {
       await markTripDeliveryDelivered(tripId!);
-      await clearPersistentTripNotification();
-      showToast('Entrega completada', 'success');
+      showToast(
+        trip?.restaurant_order_id
+          ? 'Llegaste al destino. Esperando la confirmación del cliente.'
+          : 'Entrega completada',
+        'success',
+      );
       await fetchTripDetails();
-      setTimeout(() => router.replace('/dashboard'), 800);
+      if (!trip?.restaurant_order_id) {
+        await clearPersistentTripNotification();
+        setTimeout(() => router.replace('/dashboard'), 800);
+      }
     } catch (err: any) {
       showToast(err.message || 'No se pudo completar la entrega');
     }
@@ -933,7 +948,7 @@ const DriverActiveTripScreen = () => {
         onSubmitted={() => showToast('Gracias por compartir tu experiencia', 'success')}
       />
       <WebView
-        ref={mapRef}
+        ref={(instance) => { mapRef.current = isWebViewHandle(instance) ? instance : null; }}
         style={styles.map}
         source={mapSource}
         javaScriptEnabled
@@ -1120,7 +1135,7 @@ const DriverActiveTripScreen = () => {
               disabled={!isNearDeliveryDestination}
             >
               <Feather name={isNearDeliveryDestination ? 'check-circle' : 'navigation'} size={18} color="#fff" />
-              <Text style={styles.btnText}>{isNearDeliveryDestination ? ' Confirmar Entrega' : ' En camino al destino'}</Text>
+              <Text style={styles.btnText}>{isNearDeliveryDestination ? ' Llegué al destino' : ' En camino al destino'}</Text>
             </TouchableOpacity>
           )}
           {trip.status === 'in_progress' && activeStop && (
@@ -1136,7 +1151,11 @@ const DriverActiveTripScreen = () => {
             </TouchableOpacity>
           )}
           {trip.status === 'arrived_destination' && (
-            <Text style={styles.completedText}>⏳ Esperando confirmación del pasajero...</Text>
+            <Text style={styles.completedText}>
+              {trip.trip_type === 'delivery'
+                ? 'Esperando que el cliente confirme la recepción...'
+                : '⏳ Esperando confirmación del pasajero...'}
+            </Text>
           )}
           {trip.status === 'completed' && (
             <Text style={styles.completedText}>✅ Viaje finalizado</Text>
@@ -1153,7 +1172,7 @@ const DriverActiveTripScreen = () => {
           )}
 
           {trip.trip_type === 'delivery' ? (
-            marketplaceOrder ? (
+            trip.marketplace_order_id && marketplaceOrder ? (
               <>
                 {['accepted', 'arrived'].includes(trip.status) && (
                   <TouchableOpacity
@@ -1192,7 +1211,9 @@ const DriverActiveTripScreen = () => {
                   </TouchableOpacity>
                 )}
               </>
-            ) : <ActivityIndicator style={{ marginTop: 12 }} color="#00C9A7" />
+            ) : trip.marketplace_order_id ? (
+              <ActivityIndicator style={{ marginTop: 12 }} color="#00C9A7" />
+            ) : null
           ) : (
             <TouchableOpacity
               style={styles.chatButton}

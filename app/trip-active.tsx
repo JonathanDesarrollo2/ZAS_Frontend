@@ -24,6 +24,13 @@ import { startPassengerLocationTask, stopPassengerLocationTask } from '../servic
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
+type WebViewHandle = { injectJavaScript: (script: string) => void };
+const isWebViewHandle = (value: unknown): value is WebViewHandle =>
+  typeof value === 'object' &&
+  value !== null &&
+  'injectJavaScript' in value &&
+  typeof value.injectJavaScript === 'function';
+
 const BANKS = [
   { code: '0102', name: 'Banco de Venezuela' },
   { code: '0104', name: 'Venezolano de Crédito' },
@@ -147,7 +154,7 @@ const TripActiveScreen = () => {
   }, []);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<WebViewHandle | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const activeStop = tripStatus === 'in_progress' && currentStopIndex < tripStops.length
@@ -948,7 +955,7 @@ const handleCancelAndReSearch = () => {
 
       {driverLocation || tripOrigen || tripDestino ? (
         <WebView
-          ref={webViewRef}
+          ref={(instance) => { webViewRef.current = isWebViewHandle(instance) ? instance : null; }}
           style={styles.map}
           source={mapSource}
           javaScriptEnabled

@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
   KeyboardAvoidingView, Platform, Dimensions, Alert,
+  type TextInputInstance,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -21,7 +22,7 @@ const VerifyEmailScreen = () => {
   const [resending, setResending] = useState(false);
   const [initialSendDone, setInitialSendDone] = useState(false);
 
-  const inputs = useRef<(TextInput | null)[]>([]);
+  const inputs = useRef<(TextInputInstance | null)[]>([]);
 
   useEffect(() => {
     if (!initialSendDone) {

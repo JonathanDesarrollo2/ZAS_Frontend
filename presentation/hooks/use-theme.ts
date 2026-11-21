@@ -5,11 +5,7 @@
  */
 
 import { Colors } from './theme';
-import { useColorScheme } from './use-color-scheme';
 
 export function useTheme() {
-  const scheme = useColorScheme();
-  const theme = scheme === 'unspecified' ? 'light' : scheme;
-
   return Colors.light;
 }

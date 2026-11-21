@@ -5,6 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
 import { Linking } from 'react-native';
 import Constants from 'expo-constants';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuth } from '../presentation/store/AuthStore';
 import { LEGAL_TERMS_VERSION } from '../legal/LegalTexts';
 import { stopPassengerLocationTask } from '../services/passengerLocationTask';
@@ -71,11 +72,28 @@ export default function RootLayout() {
         : typeof data.url === 'string'
           ? data.url
           : '';
-
       try {
         await (await import('expo-notifications')).clearLastNotificationResponseAsync();
       } catch (clearError) {
         console.warn('No se pudo limpiar la respuesta de notificación', clearError);
+      }
+
+      if (data.screen === 'restaurant-orders') {
+        const orderId = typeof data.orderId === 'string' ? data.orderId : '';
+        router.push(
+          orderId
+            ? `/restaurant-orders?orderId=${encodeURIComponent(orderId)}` as any
+            : '/restaurant-orders' as any,
+        );
+        return;
+      }
+      if (data.screen === 'merchant/orders') {
+        router.push('/merchant/orders' as any);
+        return;
+      }
+      if (data.screen === 'find-trips') {
+        router.push('/driver/find-trip' as any);
+        return;
       }
 
       if (!/^https:\/\/\S+$/i.test(url)) return;
@@ -217,6 +235,7 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
+    <SafeAreaProvider>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" options={{ animation: 'none' }} />
         <Stack.Screen name="auth/Login" options={{ animation: 'fade' }} />
@@ -262,6 +281,7 @@ export default function RootLayout() {
 
         <Stack.Screen name="restaurant-menu" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="restaurants" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="restaurant-orders" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="cart" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="checkout" options={{ animation: 'slide_from_right' }} />
 
@@ -270,5 +290,6 @@ export default function RootLayout() {
 
         <Stack.Screen name="history" options={{ animation: 'slide_from_right' }} />
       </Stack>
+    </SafeAreaProvider>
   );
 }

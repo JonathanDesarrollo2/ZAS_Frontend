@@ -69,9 +69,14 @@ const OrdersScreen = () => {
           Alert.alert('¡Nuevo pedido recibido!', `Hay un nuevo pedido en tu restaurante.${orderReference}`);
           void loadOrders();
         };
+        const handleOrderStatus = () => { void loadOrders(); };
 
         socket.on('restaurant:new_order', handleNewOrder);
-        unsubscribe = () => socket.off('restaurant:new_order', handleNewOrder);
+        socket.on('restaurant:order_status', handleOrderStatus);
+        unsubscribe = () => {
+          socket.off('restaurant:new_order', handleNewOrder);
+          socket.off('restaurant:order_status', handleOrderStatus);
+        };
       })
       .catch((error: unknown) => {
         console.error('No se pudo conectar para recibir pedidos en tiempo real', error);
@@ -93,6 +98,17 @@ const OrdersScreen = () => {
     } finally {
       setUpdatingOrderId(null);
     }
+  };
+
+  const rejectOrder = (order: RestaurantOrder) => {
+    Alert.alert('Rechazar pedido', '¿Confirmas que no puedes aceptar este pedido?', [
+      { text: 'Volver', style: 'cancel' },
+      {
+        text: 'Rechazar pedido',
+        style: 'destructive',
+        onPress: () => { void updateStatus(order, 'cancelled'); },
+      },
+    ]);
   };
 
   return (
@@ -123,7 +139,10 @@ const OrdersScreen = () => {
               background: '#F3F4F6',
               color: '#4B5563',
             };
-            const action = nextAction[item.status];
+            const action = nextAction[item.status] ||
+              (item.status === 'ready' && item.delivery_type === 'own'
+                ? { status: 'delivered', label: 'Confirmar entrega' }
+                : undefined);
             const orderTime = new Date(item.createdAt);
 
             return (
@@ -176,6 +195,16 @@ const OrdersScreen = () => {
                     )}
                   </TouchableOpacity>
                 )}
+                {item.status === 'pending' && (
+                  <TouchableOpacity
+                    style={[styles.rejectButton, updatingOrderId === item.id && styles.disabledButton]}
+                    onPress={() => rejectOrder(item)}
+                    disabled={updatingOrderId === item.id}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.rejectText}>Rechazar pedido</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             );
           }}
@@ -215,6 +244,8 @@ const styles = StyleSheet.create({
   actionButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 13, backgroundColor: '#00B899', marginTop: 15, paddingHorizontal: 14 },
   disabledButton: { opacity: 0.7 },
   actionText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  rejectButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#FEF2F2', marginTop: 8, paddingHorizontal: 14 },
+  rejectText: { color: '#B42318', fontSize: 13, fontWeight: '800' },
 });
 
 export default OrdersScreen;

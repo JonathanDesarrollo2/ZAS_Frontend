@@ -46,7 +46,7 @@ const CartScreen = () => {
 
       <FlatList
         data={items}
-        keyExtractor={(item) => item.productId}
+        keyExtractor={(item) => item.cartItemId}
         contentContainerStyle={{ paddingBottom: 20 }}
         ListEmptyComponent={
           <Text style={styles.empty}>Tu carrito está vacío</Text>
@@ -55,6 +55,12 @@ const CartScreen = () => {
           <View style={styles.card}>
             <View style={{ flex: 1 }}>
               <Text style={styles.itemName}>{item.product_name}</Text>
+              {item.options.length > 0 && (
+                <Text style={styles.optionsText}>
+                  {item.options.map((option) => `${option.group_name}: ${option.name}`).join(' · ')}
+                </Text>
+              )}
+              <Text style={styles.unitPrice}>${item.price.toFixed(2)} c/u</Text>
               <Text style={styles.itemPrice}>
                 ${(item.price * item.quantity).toFixed(2)}
               </Text>
@@ -62,19 +68,21 @@ const CartScreen = () => {
             <View style={styles.qtyControl}>
               <TouchableOpacity
                 style={styles.qtyBtn}
-                onPress={() => updateQuantity(item.productId, item.quantity - 1)}
+                onPress={() => updateQuantity(item.cartItemId, item.quantity - 1)}
               >
                 <Feather name="minus" size={18} color="#00C9A7" />
               </TouchableOpacity>
               <Text style={styles.qtyText}>{item.quantity}</Text>
               <TouchableOpacity
                 style={styles.qtyBtn}
-                onPress={() => updateQuantity(item.productId, item.quantity + 1)}
+                onPress={() => updateQuantity(item.cartItemId, item.quantity + 1)}
+                disabled={item.quantity >= 99}
+                accessibilityState={{ disabled: item.quantity >= 99 }}
               >
-                <Feather name="plus" size={18} color="#00C9A7" />
+                <Feather name="plus" size={18} color={item.quantity >= 99 ? '#9CA3AF' : '#00C9A7'} />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => removeItem(item.productId)}>
+            <TouchableOpacity onPress={() => removeItem(item.cartItemId)}>
               <Feather name="x" size={20} color="#FF5252" />
             </TouchableOpacity>
           </View>
@@ -126,6 +134,8 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   itemName: { fontSize: 16, fontWeight: '600', color: '#1F2937', marginBottom: 4 },
+  optionsText: { color: '#6B7280', fontSize: 12, marginBottom: 3 },
+  unitPrice: { color: '#6B7280', fontSize: 12, marginBottom: 3 },
   itemPrice: { fontSize: 15, color: '#00C9A7', fontWeight: '700' },
   qtyControl: { flexDirection: 'row', alignItems: 'center', marginRight: 12 },
   qtyBtn: {

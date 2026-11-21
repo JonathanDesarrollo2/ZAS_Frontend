@@ -10,22 +10,25 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { getProducts, Product } from '../../apis/restaurant';
 
 const ProductsScreen = () => {
+  const { categoryId, categoryName } = useLocalSearchParams<{ categoryId?: string; categoryName?: string }>();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   const loadProducts = useCallback(async () => {
     try {
-      setProducts(await getProducts());
+      setProducts(await getProducts(categoryId));
+      setFailedImages(new Set());
     } catch (error: any) {
       Alert.alert('Error', error.message || 'No se pudieron cargar los productos');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [categoryId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -35,15 +38,17 @@ const ProductsScreen = () => {
   );
 
   const openProduct = (productId: string) => {
-    router.push({ pathname: '/merchant/product-edit', params: { productId } });
+    router.push({ pathname: '/merchant/product-edit', params: { productId, categoryId } });
   };
 
   return (
     <View style={styles.screen}>
       <View style={styles.heading}>
         <Text style={styles.eyebrow}>MENÚ</Text>
-        <Text style={styles.title}>Productos</Text>
-        <Text style={styles.subtitle}>Administra tus platos y precios.</Text>
+        <Text style={styles.title}>{categoryName || 'Productos'}</Text>
+        <Text style={styles.subtitle}>
+          {categoryName ? `Productos de ${categoryName}.` : 'Administra tus platos y precios.'}
+        </Text>
       </View>
 
       {loading ? (
@@ -64,8 +69,13 @@ const ProductsScreen = () => {
           }
           renderItem={({ item }) => (
             <View style={styles.card}>
-              {item.image ? (
-                <Image source={{ uri: item.image }} style={styles.productImage} resizeMode="cover" />
+              {item.image && !failedImages.has(item.id) ? (
+                <Image
+                  source={{ uri: item.image }}
+                  style={styles.productImage}
+                  resizeMode="cover"
+                  onError={() => setFailedImages((previous) => new Set(previous).add(item.id))}
+                />
               ) : (
                 <View style={styles.imagePlaceholder}><Feather name="image" size={30} color="#9CA3AF" /></View>
               )}
@@ -86,7 +96,10 @@ const ProductsScreen = () => {
         accessibilityRole="button"
         accessibilityLabel="Crear producto"
         style={styles.fab}
-        onPress={() => router.push('/merchant/product-edit')}
+        onPress={() => router.push({
+          pathname: '/merchant/product-edit',
+          params: { categoryId, categoryName },
+        })}
         activeOpacity={0.85}
       >
         <Feather name="plus" size={25} color="#FFFFFF" />

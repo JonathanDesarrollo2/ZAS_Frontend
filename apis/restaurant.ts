@@ -35,6 +35,7 @@ export interface Product {
   image?: string;
   sort_order: number;
   active: boolean;
+  category?: Category;
   optionGroups?: OptionGroup[];
 }
 
@@ -49,6 +50,7 @@ export interface Restaurant {
   lng?: number;
   delivery_radius_km?: number;
   has_own_delivery: boolean;
+  driver_notification_scope: 'linked' | 'unlinked' | 'all';
   linked_driver_id?: string | null;
   commission_percent: number;
   active: boolean;
@@ -65,8 +67,9 @@ export const getCategories = async (): Promise<Category[]> => {
   return res.content;
 };
 
-export const getProducts = async (): Promise<Product[]> => {
-  const res = await apiClient<{ result: boolean; content: Product[] }>('/private/merchant/products');
+export const getProducts = async (categoryId?: string): Promise<Product[]> => {
+  const query = categoryId ? `?categoryId=${encodeURIComponent(categoryId)}` : '';
+  const res = await apiClient<{ result: boolean; content: Product[] }>(`/private/merchant/products${query}`);
   return res.content;
 };
 
@@ -194,4 +197,36 @@ export const createOption = async (groupId: string, data: {
     method: 'POST',
     body: JSON.stringify(data),
   });
+};
+
+export const updateOptionGroup = async (groupId: string, data: {
+  name?: string;
+  required?: boolean;
+  min_select?: number;
+  max_select?: number;
+  sort_order?: number;
+}) => {
+  return apiClient(`/private/merchant/option-groups/${groupId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+};
+
+export const deleteOptionGroup = async (groupId: string) => {
+  return apiClient(`/private/merchant/option-groups/${groupId}`, { method: 'DELETE' });
+};
+
+export const updateOption = async (optionId: string, data: {
+  name?: string;
+  extra_price?: number;
+  active?: boolean;
+}) => {
+  return apiClient(`/private/merchant/options/${optionId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+};
+
+export const deleteOption = async (optionId: string) => {
+  return apiClient(`/private/merchant/options/${optionId}`, { method: 'DELETE' });
 };

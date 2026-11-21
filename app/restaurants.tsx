@@ -11,6 +11,7 @@ import {
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { apiClient } from '../apis/Client';
+import * as Location from 'expo-location';
 
 interface Restaurant {
   id: string;
@@ -23,6 +24,7 @@ interface Restaurant {
 const RestaurantsScreen = () => {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -31,15 +33,21 @@ const RestaurantsScreen = () => {
   }, []);
 
   const loadRestaurants = async () => {
+    setLoading(true);
+    setLoadError(null);
+    setRestaurants([]);
     try {
-      const lat = 10.071866;
-      const lng = -66.869583;
-      const res = await apiClient<{ result: boolean; content: Restaurant[] }>(
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') throw new Error('Permite el acceso a tu ubicación para buscar restaurantes cercanos.');
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude: lat, longitude: lng } = position.coords;
+      const res = await apiClient<{ result: boolean; content: Restaurant[]; error?: string[] }>(
         `/public/restaurants/nearby?lat=${lat}&lng=${lng}&radius=5`
       );
+      if (!res.result || !Array.isArray(res.content)) throw new Error(res.error?.[0] || 'No se pudieron cargar los locales.');
       setRestaurants(res.content);
     } catch (err) {
-      console.error('Error cargando locales', err);
+      setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los locales.');
     } finally {
       setLoading(false);
     }
@@ -68,6 +76,14 @@ const RestaurantsScreen = () => {
         <Text style={styles.title}>Locales de Comida</Text>
         <TouchableOpacity
           accessibilityRole="button"
+          accessibilityLabel="Mis pedidos"
+          onPress={() => router.push('/restaurant-orders' as any)}
+          style={styles.headerButton}
+        >
+          <Feather name="clipboard" size={19} color="#00A889" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
           accessibilityLabel={searchVisible ? 'Cerrar búsqueda' : 'Buscar locales'}
           onPress={() => {
             setSearchVisible((visible) => !visible);
@@ -94,6 +110,15 @@ const RestaurantsScreen = () => {
       )}
       {loading ? (
         <ActivityIndicator size="large" color="#00C9A7" style={styles.loading} />
+      ) : loadError ? (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIcon}><Feather name="map-pin" size={29} color="#00C9A7" /></View>
+          <Text style={styles.emptyTitle}>No pudimos buscar locales</Text>
+          <Text style={styles.empty}>{loadError}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => void loadRestaurants()}>
+            <Text style={styles.retryText}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <FlatList
           data={filteredRestaurants}
@@ -166,7 +191,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5F5F0',
   },
-  title: { flex: 1, textAlign: 'center', fontSize: 19, fontWeight: '800', color: '#1F2937' },
+  title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '800', color: '#1F2937' },
   searchContainer: {
     minHeight: 46,
     flexDirection: 'row',
@@ -203,6 +228,8 @@ const styles = StyleSheet.create({
   addressRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   cardAddress: { flex: 1, fontSize: 12, color: '#6B7280' },
   distancePill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#E6FFFA', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5, marginTop: 8 },
+  retryButton: { backgroundColor: '#00C9A7', borderRadius: 12, paddingHorizontal: 22, paddingVertical: 12, marginTop: 16 },
+  retryText: { color: '#FFFFFF', fontWeight: '700' },
   cardDistance: { fontSize: 11, color: '#008F76', fontWeight: '700' },
   chevron: { width: 28, alignItems: 'flex-end', marginLeft: 4 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 25 },

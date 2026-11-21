@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { Category, createCategory, deleteCategory, getCategories } from '../../apis/restaurant';
 
 const CategoriesScreen = () => {
@@ -96,11 +97,22 @@ const CategoriesScreen = () => {
           }
           renderItem={({ item }) => (
             <View style={styles.card}>
-              <View style={styles.folderIcon}><Feather name="tag" size={19} color="#00A889" /></View>
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>{item.name}</Text>
-                <Text style={styles.cardCaption}>{item.active ? 'Activa' : 'Inactiva'}</Text>
-              </View>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={`Ver productos de ${item.name}`}
+                style={styles.categoryLink}
+                onPress={() => router.push({
+                  pathname: '/merchant/products',
+                  params: { categoryId: item.id, categoryName: item.name },
+                })}
+              >
+                <View style={styles.folderIcon}><Feather name="tag" size={19} color="#00A889" /></View>
+                <View style={styles.cardInfo}>
+                  <Text style={styles.cardTitle}>{item.name}</Text>
+                  <Text style={styles.cardCaption}>{item.active ? 'Activa · Ver productos' : 'Inactiva · Ver productos'}</Text>
+                </View>
+                <Feather name="chevron-right" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel={`Eliminar ${item.name}`}
@@ -189,6 +201,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 6,
   },
+  categoryLink: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   folderIcon: { width: 43, height: 43, borderRadius: 14, backgroundColor: '#E6FFFA', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   cardInfo: { flex: 1 },
   cardTitle: { color: '#1F2937', fontSize: 15, fontWeight: '700' },

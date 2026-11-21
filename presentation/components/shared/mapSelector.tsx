@@ -10,6 +10,13 @@ import { sanitizeReadableAddress } from '../../../utils/address';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyCQQVLprlkXfH6sdrNv0VlVSkEN_2_M-eE';
 
+type WebViewHandle = { injectJavaScript: (script: string) => void };
+const isWebViewHandle = (value: unknown): value is WebViewHandle =>
+  typeof value === 'object' &&
+  value !== null &&
+  'injectJavaScript' in value &&
+  typeof value.injectJavaScript === 'function';
+
 interface MapSelectorProps {
   visible: boolean;
   initialCoords: { lat: number; lng: number };
@@ -18,7 +25,7 @@ interface MapSelectorProps {
 }
 
 const MapSelector: React.FC<MapSelectorProps> = ({ visible, initialCoords, onConfirm, onCancel }) => {
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<WebViewHandle | null>(null);
   const [selectedAddress, setSelectedAddress] = useState('');
   const [selectedCoords, setSelectedCoords] = useState(initialCoords);
   const [searchQuery, setSearchQuery] = useState('');
@@ -128,7 +135,7 @@ const MapSelector: React.FC<MapSelectorProps> = ({ visible, initialCoords, onCon
     <Modal visible={visible} animationType="slide">
       <View style={styles.mapScreen}>
         <WebView
-          ref={webViewRef}
+          ref={(instance) => { webViewRef.current = isWebViewHandle(instance) ? instance : null; }}
           style={styles.mapFull}
           source={{ html: mapHTML }}
           javaScriptEnabled
